@@ -1,0 +1,13 @@
+{
+    "material-icon-theme.folders.associations": {
+        "qcyx": "app",
+        "device": "controller",
+        "sections": "content",
+        "tabs": "class",
+        "wix": "windows"
+    },
+    "conventionalCommits.scopes": [
+        "cli",
+        "gui"
+    ],
+}

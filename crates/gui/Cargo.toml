@@ -1,0 +1,16 @@
+[package]
+name = "qcyx_gui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[package.metadata.dist]
+dist = false
+
+[dependencies]
+qcyx_core = { workspace = true }
+qcyx_i18n = { workspace = true }
+iced = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

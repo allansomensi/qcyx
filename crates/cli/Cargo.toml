@@ -1,0 +1,13 @@
+[package]
+name = "qcyx_cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[package.metadata.dist]
+dist = false
+
+[dependencies]
+qcyx_core = { workspace = true }
+qcyx_i18n = { workspace = true }
+clap = { workspace = true }

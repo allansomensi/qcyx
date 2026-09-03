@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Protocol Documentation
+    url: https://github.com/allansomensi/qcyx/tree/main/docs/protocol
+    about: Read the reverse-engineered BLE protocol docs before opening a protocol-related issue.
+  - name: Contributing Guide
+    url: https://github.com/allansomensi/qcyx/blob/main/CONTRIBUTING.md
+    about: Read this before submitting code or protocol research.

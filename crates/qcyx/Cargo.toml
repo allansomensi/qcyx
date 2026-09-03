@@ -1,0 +1,30 @@
+[package]
+name = "qcyx"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+description.workspace = true
+license.workspace = true
+homepage.workspace = true
+
+[package.metadata.wix]
+upgrade-guid = "50FC9434-9822-4BF9-A108-F4313C7C36C9"
+path-guid = "F25B0EE0-4E73-4A58-9E31-E29077A23844"
+license = "../../pkg/windows/license.txt"
+eula = "../../pkg/windows/eula.rtf"
+product-icon = "../../pkg/windows/Product.ico"
+
+[[bin]]
+name = "qcyx"
+path = "src/main.rs"
+
+[[bin]]
+name = "qcyx-cli"
+path = "src/cli.rs"
+
+[dependencies]
+qcyx_gui = { path = "../gui" }
+qcyx_cli = { path = "../cli" }
+qcyx_i18n = { path = "../i18n" }
+tokio = { version = "1", features = ["full"] }
