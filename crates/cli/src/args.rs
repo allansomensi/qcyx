@@ -72,6 +72,23 @@ pub enum Commands {
         #[arg(value_enum)]
         state: ToggleArg,
     },
+    /// Toggles the LDAC codec
+    Ldac {
+        #[arg(value_enum)]
+        state: ToggleArg,
+    },
+    /// Toggles dual-device (multipoint) connection
+    Multipoint {
+        #[arg(value_enum)]
+        state: ToggleArg,
+    },
+    /// Assigns a tap action to one earbud/click-count control
+    TouchAction {
+        #[arg(value_enum)]
+        control: TouchControlArg,
+        #[arg(value_enum)]
+        action: TouchActionArg,
+    },
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]
@@ -154,6 +171,31 @@ pub enum NoiseCancellingArg {
         #[arg(value_parser = clap::value_parser!(u8).range(1..=3))]
         level: u8,
     },
+}
+
+/// Which earbud and click count a touch control addresses.
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum TouchControlArg {
+    LeftSingle,
+    RightSingle,
+    LeftDouble,
+    RightDouble,
+    LeftTriple,
+    RightTriple,
+}
+
+/// The action a tap gesture triggers.
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum TouchActionArg {
+    None,
+    PlayPause,
+    Previous,
+    Next,
+    VoiceAssistant,
+    VolumeUp,
+    VolumeDown,
+    GameMode,
+    Anc,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]

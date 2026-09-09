@@ -9,13 +9,16 @@ use crate::balance;
 use crate::battery::BatteryStatus;
 use crate::command::{self, AncScene, opcode};
 use crate::device::profile::{
-    BATTERY_UUID, COMMAND_UUID, NOTIFY_UUID, QCY_COMPANY_ID, SERVICE_UUID, VERSION_UUID,
+    BATTERY_UUID, COMMAND_UUID, NOTIFY_UUID, QCY_COMPANY_ID, SERVICE_UUID, TOUCH_ACTION_UUID,
+    VERSION_UUID,
 };
 use crate::device_actions;
 use crate::disconnect_power_off::{self, DisconnectPowerOff};
 use crate::eq::EqPreset;
 use crate::error::CoreError;
 use crate::game_mode::{self, GameMode};
+use crate::ldac::{self, Ldac};
+use crate::multipoint::{self, Multipoint};
 use crate::notification_volume::{self, NotificationVolume};
 use crate::protocol::Command;
 use crate::query;
@@ -23,6 +26,7 @@ use crate::response::{self, Event};
 use crate::scheduled_power_off::{self, ScheduledPowerOff};
 use crate::sleep_mode::{self, SleepMode};
 use crate::timeout::{budget, guard};
+use crate::touch_action;
 use crate::version::FirmwareVersion;
 use crate::wear_detection::{self, WearDetection};
 use btleplug::api::{
@@ -235,6 +239,7 @@ pub struct DeviceHandle {
     notify_char: Characteristic,
     battery_char: Option<Characteristic>,
     version_char: Option<Characteristic>,
+    touch_action_char: Option<Characteristic>,
     device_name: Option<String>,
 }
 
@@ -535,6 +540,82 @@ impl DeviceHandle {
         Ok(game_mode::parse_game_mode(&params))
     }
 
+    /// Writes a raw payload directly to a characteristic, bypassing the
+    /// `0xFF` frame. Used only for the touch-action characteristic.
+    async fn write_raw(
+        &self,
+        characteristic: &Characteristic,
+        payload: &[u8],
+    ) -> Result<(), CoreError> {
+        let write_type = self.write_type_for(payload.len());
+
+        guard(budget::GATT_OP, "write_raw", async {
+            self.peripheral
+                .write(characteristic, payload, write_type)
+                .await?;
+            Ok(())
+        })
+        .await?;
+
+        if matches!(write_type, WriteType::WithoutResponse) {
+            time::sleep(WRITE_FLUSH).await;
+        }
+
+        Ok(())
+    }
+
+    /// Assigns a tap action to one earbud/click-count control.
+    pub async fn set_touch_action(
+        &self,
+        control: touch_action::TouchControl,
+        action: touch_action::TouchAction,
+    ) -> Result<(), CoreError> {
+        let touch_action_char = self
+            .touch_action_char
+            .as_ref()
+            .ok_or_else(|| CoreError::CharacteristicNotFound("touch action (0000000d)".into()))?;
+
+        let payload = touch_action::set_touch_action(control, action);
+        self.write_raw(touch_action_char, &payload).await
+    }
+
+    /// Reads the full six-control touch-action map.
+    pub async fn read_touch_actions(&self) -> Result<touch_action::TouchActionMap, CoreError> {
+        let touch_action_char = self
+            .touch_action_char
+            .as_ref()
+            .ok_or_else(|| CoreError::CharacteristicNotFound("touch action (0000000d)".into()))?;
+
+        let data = guard(budget::GATT_OP, "read_touch_actions", async {
+            Ok(self.peripheral.read(touch_action_char).await?)
+        })
+        .await?;
+
+        Ok(touch_action::TouchActionMap::parse(&data))
+    }
+
+    /// Sets the LDAC codec toggle.
+    pub async fn set_ldac(&self, state: Ldac) -> Result<(), CoreError> {
+        self.send(ldac::set_ldac(state)).await
+    }
+
+    /// Reads the current LDAC toggle state.
+    pub async fn get_ldac(&self) -> Result<Option<Ldac>, CoreError> {
+        let params = self.query_param(ldac::OPCODE).await?;
+        Ok(ldac::parse_ldac(&params))
+    }
+
+    /// Sets the dual-device (multipoint) connection toggle.
+    pub async fn set_multipoint(&self, state: Multipoint) -> Result<(), CoreError> {
+        self.send(multipoint::set_multipoint(state)).await
+    }
+
+    /// Reads the current multipoint toggle state.
+    pub async fn get_multipoint(&self) -> Result<Option<Multipoint>, CoreError> {
+        let params = self.query_param(multipoint::OPCODE).await?;
+        Ok(multipoint::parse_multipoint(&params))
+    }
+
     /// Sets sleep mode.
     pub async fn set_sleep_mode(&self, state: SleepMode) -> Result<(), CoreError> {
         self.send(sleep_mode::set_sleep_mode(state)).await
@@ -605,6 +686,7 @@ pub async fn connect() -> Result<DeviceHandle, CoreError> {
                 notify_char: setup.notify_char,
                 battery_char: setup.battery_char,
                 version_char: setup.version_char,
+                touch_action_char: setup.touch_action_char,
                 device_name,
             })
         }
@@ -722,6 +804,7 @@ struct SetupResult {
     notify_char: Characteristic,
     battery_char: Option<Characteristic>,
     version_char: Option<Characteristic>,
+    touch_action_char: Option<Characteristic>,
 }
 
 async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError> {
@@ -747,6 +830,11 @@ async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError>
     let version_char = chars.iter().find(|c| c.uuid == VERSION_UUID).cloned();
     if version_char.is_none() {
         tracing::debug!("version characteristic (00000007) not found");
+    }
+
+    let touch_action_char = chars.iter().find(|c| c.uuid == TOUCH_ACTION_UUID).cloned();
+    if touch_action_char.is_none() {
+        tracing::debug!("touch action characteristic (0000000d) not found");
     }
 
     let write_type = if write_char
@@ -792,6 +880,7 @@ async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError>
         notify_char,
         battery_char,
         version_char,
+        touch_action_char,
     })
 }
 
@@ -970,6 +1059,51 @@ pub async fn set_game_mode(state: GameMode) -> Result<(), CoreError> {
 pub async fn get_game_mode() -> Result<Option<GameMode>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_game_mode().await;
+    finish(handle, result).await
+}
+
+/// Connects, assigns a touch action, and disconnects.
+pub async fn set_touch_action(
+    control: touch_action::TouchControl,
+    action: touch_action::TouchAction,
+) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_touch_action(control, action).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads the touch-action map, and disconnects.
+pub async fn read_touch_actions() -> Result<touch_action::TouchActionMap, CoreError> {
+    let handle = connect().await?;
+    let result = handle.read_touch_actions().await;
+    finish(handle, result).await
+}
+
+/// Connects, sets the LDAC toggle, and disconnects.
+pub async fn set_ldac(state: Ldac) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_ldac(state).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads the LDAC toggle, and disconnects.
+pub async fn get_ldac() -> Result<Option<Ldac>, CoreError> {
+    let handle = connect().await?;
+    let result = handle.get_ldac().await;
+    finish(handle, result).await
+}
+
+/// Connects, sets the multipoint toggle, and disconnects.
+pub async fn set_multipoint(state: Multipoint) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_multipoint(state).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads the multipoint toggle, and disconnects.
+pub async fn get_multipoint() -> Result<Option<Multipoint>, CoreError> {
+    let handle = connect().await?;
+    let result = handle.get_multipoint().await;
     finish(handle, result).await
 }
 

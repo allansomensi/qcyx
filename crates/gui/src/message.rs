@@ -5,10 +5,13 @@ use qcyx_core::command::AncScene;
 use qcyx_core::disconnect_power_off::DisconnectPowerOff;
 use qcyx_core::eq::EqPreset;
 use qcyx_core::game_mode::GameMode;
+use qcyx_core::ldac::Ldac;
+use qcyx_core::multipoint::Multipoint;
 use qcyx_core::notification_volume::NotificationVolume;
 use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::session::ConnectionInfo;
 use qcyx_core::sleep_mode::SleepMode;
+use qcyx_core::touch_action::{TouchAction, TouchControl};
 use qcyx_core::wear_detection::WearDetection;
 
 #[derive(Debug, Clone)]
@@ -75,4 +78,13 @@ pub enum Message {
     /// Request to set sleep mode.
     SetSleepMode(SleepMode),
     SleepModeResult(SleepMode, Result<(), String>),
+    /// Request to set the LDAC toggle.
+    SetLdac(Ldac),
+    LdacResult(Ldac, Result<(), String>),
+    /// Request to set the multipoint toggle.
+    SetMultipoint(Multipoint),
+    MultipointResult(Multipoint, Result<(), String>),
+    /// Request to assign a touch action to one earbud/click-count control.
+    SetTouchAction(TouchControl, TouchAction),
+    TouchActionResult(TouchControl, TouchAction, Result<(), String>),
 }

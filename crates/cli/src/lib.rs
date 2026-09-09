@@ -1,15 +1,21 @@
 pub mod args;
 
-use args::{AncSceneArg, Cli, Commands, NoiseCancellingArg, PowerOffArg, ToggleArg};
+use args::{
+    AncSceneArg, Cli, Commands, NoiseCancellingArg, PowerOffArg, ToggleArg, TouchActionArg,
+    TouchControlArg,
+};
 use clap::Parser;
 use qcyx_core::command::{AncScene, NcLevel, NoiseCancellingMode, TransparencyMode};
 use qcyx_core::disconnect_power_off::DisconnectPowerOff;
 use qcyx_core::eq::EqPreset;
 use qcyx_core::error::CoreError;
 use qcyx_core::game_mode::GameMode;
+use qcyx_core::ldac::Ldac;
+use qcyx_core::multipoint::Multipoint;
 use qcyx_core::notification_volume::NotificationVolume;
 use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::sleep_mode::SleepMode;
+use qcyx_core::touch_action::{TouchAction, TouchControl};
 use qcyx_core::wear_detection::WearDetection;
 use qcyx_i18n::fl;
 use std::io::Write;
@@ -118,6 +124,56 @@ pub async fn run() -> Result<(), CoreError> {
             println!("{}", fl!("cli-sleep-mode-set"));
             Ok(())
         }
+        Commands::Ldac { state } => {
+            let state = match state {
+                ToggleArg::On => Ldac::On,
+                ToggleArg::Off => Ldac::Off,
+            };
+            qcyx_core::client::set_ldac(state).await?;
+            println!("{}", fl!("cli-ldac-set"));
+            Ok(())
+        }
+        Commands::Multipoint { state } => {
+            let state = match state {
+                ToggleArg::On => Multipoint::On,
+                ToggleArg::Off => Multipoint::Off,
+            };
+            qcyx_core::client::set_multipoint(state).await?;
+            println!("{}", fl!("cli-multipoint-set"));
+            Ok(())
+        }
+        Commands::TouchAction { control, action } => {
+            let control = touch_control_from_arg(control);
+            let action = touch_action_from_arg(action);
+            qcyx_core::client::set_touch_action(control, action).await?;
+            println!("{}", fl!("cli-touch-action-set"));
+            Ok(())
+        }
+    }
+}
+
+fn touch_control_from_arg(arg: TouchControlArg) -> TouchControl {
+    match arg {
+        TouchControlArg::LeftSingle => TouchControl::LeftSingle,
+        TouchControlArg::RightSingle => TouchControl::RightSingle,
+        TouchControlArg::LeftDouble => TouchControl::LeftDouble,
+        TouchControlArg::RightDouble => TouchControl::RightDouble,
+        TouchControlArg::LeftTriple => TouchControl::LeftTriple,
+        TouchControlArg::RightTriple => TouchControl::RightTriple,
+    }
+}
+
+fn touch_action_from_arg(arg: TouchActionArg) -> TouchAction {
+    match arg {
+        TouchActionArg::None => TouchAction::None,
+        TouchActionArg::PlayPause => TouchAction::PlayPause,
+        TouchActionArg::Previous => TouchAction::Previous,
+        TouchActionArg::Next => TouchAction::Next,
+        TouchActionArg::VoiceAssistant => TouchAction::VoiceAssistant,
+        TouchActionArg::VolumeUp => TouchAction::VolumeUp,
+        TouchActionArg::VolumeDown => TouchAction::VolumeDown,
+        TouchActionArg::GameMode => TouchAction::GameMode,
+        TouchActionArg::Anc => TouchAction::Anc,
     }
 }
 

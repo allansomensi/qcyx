@@ -9,9 +9,12 @@ use qcyx_core::command::AncScene;
 use qcyx_core::disconnect_power_off::DisconnectPowerOff;
 use qcyx_core::eq::EqPreset;
 use qcyx_core::game_mode::GameMode;
+use qcyx_core::ldac::Ldac;
+use qcyx_core::multipoint::Multipoint;
 use qcyx_core::notification_volume::NotificationVolume;
 use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::sleep_mode::SleepMode;
+use qcyx_core::touch_action::TouchActionMap;
 use qcyx_core::version::FirmwareVersion;
 use qcyx_core::wear_detection::WearDetection;
 
@@ -70,6 +73,15 @@ pub struct App {
     /// Sleep mode, read at connect time.
     pub sleep_mode: Option<SleepMode>,
     pub sleep_mode_status: Option<String>,
+    /// LDAC codec toggle, read at connect time.
+    pub ldac: Option<Ldac>,
+    pub ldac_status: Option<String>,
+    /// Dual-device (multipoint) connection toggle, read at connect time.
+    pub multipoint: Option<Multipoint>,
+    pub multipoint_status: Option<String>,
+    /// Touch-action map, read at connect time.
+    pub touch_actions: Option<TouchActionMap>,
+    pub touch_actions_status: Option<String>,
     pub status_log: Option<String>,
 }
 
@@ -109,6 +121,12 @@ impl Default for App {
             game_mode_status: None,
             sleep_mode: None,
             sleep_mode_status: None,
+            ldac: None,
+            ldac_status: None,
+            multipoint: None,
+            multipoint_status: None,
+            touch_actions: None,
+            touch_actions_status: None,
             status_log: None,
         }
     }

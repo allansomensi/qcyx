@@ -28,7 +28,7 @@ Configuration of QCY earbuds is officially restricted to the proprietary mobile 
 
 > ⚠️ QCYx is in early development. Features marked 🚧 are planned but not yet implemented.
 
-- ✅ **Active Noise Cancellation (ANC):** Full control over Normal, Transparency, and all specific Noise Cancelling modes.
+- ✅ **Active Noise Cancellation (ANC):** Full control over Normal, Transparency, and all specific ANC modes.
 - ✅ **Battery Monitoring:** Read current battery status.
 - ✅ **Audio Controls:** Set equalizer presets and adjust channel balance.
 - ✅ **Notification Volume:** Set the earbuds' notification volume.
@@ -36,11 +36,11 @@ Configuration of QCY earbuds is officially restricted to the proprietary mobile 
 - ✅ **Wear Detection:** Toggle in-ear detection.
 - ✅ **Game Mode:** Toggle low-latency audio for gaming.
 - ✅ **Sleep Mode:** Toggle sleep mode.
+- ✅ **Click Actions:** Assign single/double/triple tap actions, per earbud.
+- ✅ **LDAC:** High-resolution codec toggle.
+- ✅ **Dual Device Connection:** Connect to two devices at once.
 - ✅ **Device Management:** Read firmware version, rename the device, reset to default, and factory reset.
 - ✅ **Multi-language Support:** UI available in English and Portuguese (pt-BR).
-- 🚧 **Click actions:** Single/double/triple tap, per earbud.
-- 🚧 **LDAC:** High-resolution codec toggle.
-- 🚧 **Dual device connection:** Connect to two devices at once.
 - 🚧 **Custom EQ:** Per-band editing.
 - 🚧 **Find my earbuds:** Trigger a high-frequency sound to locate misplaced earbuds.
 - 🚧 **Firmware update:** Flash official firmware updates over the air (OTA).
@@ -147,6 +147,25 @@ qcyx-cli game-mode off
 # Sleep mode
 qcyx-cli sleep-mode on
 qcyx-cli sleep-mode off
+
+# LDAC codec
+qcyx-cli ldac on
+qcyx-cli ldac off
+
+# Dual-device (multipoint) connection
+qcyx-cli multipoint on
+qcyx-cli multipoint off
+
+# Touch actions — assign what a tap gesture does, per earbud/click-count
+qcyx-cli touch-action left-single none
+qcyx-cli touch-action left-single play-pause
+qcyx-cli touch-action left-double previous
+qcyx-cli touch-action right-double next
+qcyx-cli touch-action left-triple voice-assistant
+qcyx-cli touch-action right-triple anc
+qcyx-cli touch-action right-single volume-up
+qcyx-cli touch-action right-single volume-down
+qcyx-cli touch-action left-single game-mode
 
 # Reset settings to default
 qcyx-cli reset-default

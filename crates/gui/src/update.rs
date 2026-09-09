@@ -3,6 +3,7 @@ use iced::Task;
 use qcyx_core::client::AncConfirmation;
 use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::session;
+use qcyx_core::touch_action::TouchControl;
 use qcyx_core::wear_detection::WearDetection;
 use qcyx_i18n::fl;
 use tracing::{debug, error, info};
@@ -29,6 +30,9 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             app.disconnect_power_off = info.initial_disconnect_power_off;
             app.game_mode = info.initial_game_mode;
             app.sleep_mode = info.initial_sleep_mode;
+            app.ldac = info.initial_ldac;
+            app.multipoint = info.initial_multipoint;
+            app.touch_actions = info.initial_touch_actions;
             Task::none()
         }
         Message::BatteryResult(result) => {
@@ -77,6 +81,12 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             app.game_mode_status = None;
             app.sleep_mode = None;
             app.sleep_mode_status = None;
+            app.ldac = None;
+            app.ldac_status = None;
+            app.multipoint = None;
+            app.multipoint_status = None;
+            app.touch_actions = None;
+            app.touch_actions_status = None;
             app.status_log = None;
             Task::none()
         }
@@ -442,6 +452,80 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                 Err(e) => {
                     error!("Failed to set sleep mode: {e}");
                     app.sleep_mode_status = Some(fl!("settings-sleep-mode-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::SetLdac(state) => {
+            info!("Requesting LDAC: {state:?}");
+            app.ldac = Some(state);
+            app.ldac_status = None;
+            Task::perform(
+                async move { session::set_ldac(state).await.map_err(|e| e.to_string()) },
+                move |result| Message::LdacResult(state, result),
+            )
+        }
+        Message::LdacResult(state, result) => {
+            match result {
+                Ok(()) => info!("LDAC set: {state:?}"),
+                Err(e) => {
+                    error!("Failed to set LDAC: {e}");
+                    app.ldac_status = Some(fl!("settings-ldac-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::SetMultipoint(state) => {
+            info!("Requesting multipoint: {state:?}");
+            app.multipoint = Some(state);
+            app.multipoint_status = None;
+            Task::perform(
+                async move {
+                    session::set_multipoint(state)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::MultipointResult(state, result),
+            )
+        }
+        Message::MultipointResult(state, result) => {
+            match result {
+                Ok(()) => info!("Multipoint set: {state:?}"),
+                Err(e) => {
+                    error!("Failed to set multipoint: {e}");
+                    app.multipoint_status = Some(fl!("settings-multipoint-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::SetTouchAction(control, action) => {
+            info!("Requesting touch action: {control:?} -> {action:?}");
+            if let Some(map) = app.touch_actions.as_mut() {
+                match control {
+                    TouchControl::LeftSingle => map.left_single = Some(action),
+                    TouchControl::RightSingle => map.right_single = Some(action),
+                    TouchControl::LeftDouble => map.left_double = Some(action),
+                    TouchControl::RightDouble => map.right_double = Some(action),
+                    TouchControl::LeftTriple => map.left_triple = Some(action),
+                    TouchControl::RightTriple => map.right_triple = Some(action),
+                }
+            }
+            app.touch_actions_status = None;
+            Task::perform(
+                async move {
+                    session::set_touch_action(control, action)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::TouchActionResult(control, action, result),
+            )
+        }
+        Message::TouchActionResult(control, action, result) => {
+            match result {
+                Ok(()) => info!("Touch action set: {control:?} -> {action:?}"),
+                Err(e) => {
+                    error!("Failed to set touch action: {e}");
+                    app.touch_actions_status = Some(fl!("settings-touch-action-error", error = e));
                 }
             }
             Task::none()

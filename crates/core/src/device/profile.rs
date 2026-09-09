@@ -29,6 +29,11 @@ pub const BATTERY_UUID: Uuid = Uuid::from_u128(0x00000008_0000_1000_8000_00805f9
 /// Firmware version characteristic. Direct-read pattern. See [`crate::version`].
 pub const VERSION_UUID: Uuid = Uuid::from_u128(0x00000007_0000_1000_8000_00805f9b34fb);
 
+/// Touch-action characteristic. Raw 2-byte `[control, action]` writes —
+/// NOT `0xFF`-framed, unlike every other characteristic here. See
+/// [`crate::touch_action`].
+pub const TOUCH_ACTION_UUID: Uuid = Uuid::from_u128(0x0000000d_0000_1000_8000_00805f9b34fb);
+
 #[cfg(test)]
 mod tests {
     use super::*;

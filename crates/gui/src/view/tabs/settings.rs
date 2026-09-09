@@ -1,13 +1,16 @@
 use crate::app::App;
 use crate::message::Message;
 use crate::view::components::{badge, card};
-use iced::widget::{Space, button, column, row, text, text_input, toggler};
+use iced::widget::{Space, button, column, pick_list, row, text, text_input, toggler};
 use iced::{Alignment, Border, Element, Length, Theme};
 use qcyx_core::disconnect_power_off::DisconnectPowerOff;
 use qcyx_core::game_mode::GameMode;
+use qcyx_core::ldac::Ldac;
+use qcyx_core::multipoint::Multipoint;
 use qcyx_core::notification_volume::NotificationVolume;
 use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::sleep_mode::SleepMode;
+use qcyx_core::touch_action::{TouchAction, TouchControl};
 use qcyx_i18n::fl;
 
 pub fn view(app: &App) -> Element<'_, Message> {
@@ -67,6 +70,20 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 matches!(app.sleep_mode, Some(SleepMode::On)),
                 &app.sleep_mode_status,
                 |on| Message::SetSleepMode(if on { SleepMode::On } else { SleepMode::Off }),
+            ),
+            wired_toggle_row(
+                fl!("settings-ldac-label"),
+                fl!("settings-ldac-desc"),
+                matches!(app.ldac, Some(Ldac::On)),
+                &app.ldac_status,
+                |on| Message::SetLdac(if on { Ldac::On } else { Ldac::Off }),
+            ),
+            wired_toggle_row(
+                fl!("settings-multipoint-label"),
+                fl!("settings-multipoint-desc"),
+                matches!(app.multipoint, Some(Multipoint::On)),
+                &app.multipoint_status,
+                |on| Message::SetMultipoint(if on { Multipoint::On } else { Multipoint::Off }),
             ),
         ]
         .spacing(16),
@@ -248,10 +265,55 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .spacing(10),
     );
 
+    let touch_action_section = card::panel(
+        column![
+            column![
+                text(fl!("settings-touch-action-title")).size(14),
+                text(fl!("settings-touch-action-desc"))
+                    .size(11)
+                    .style(text::secondary),
+            ]
+            .spacing(2),
+            touch_action_row(
+                fl!("settings-touch-action-left-single"),
+                TouchControl::LeftSingle,
+                app.touch_actions.and_then(|m| m.left_single),
+            ),
+            touch_action_row(
+                fl!("settings-touch-action-right-single"),
+                TouchControl::RightSingle,
+                app.touch_actions.and_then(|m| m.right_single),
+            ),
+            touch_action_row(
+                fl!("settings-touch-action-left-double"),
+                TouchControl::LeftDouble,
+                app.touch_actions.and_then(|m| m.left_double),
+            ),
+            touch_action_row(
+                fl!("settings-touch-action-right-double"),
+                TouchControl::RightDouble,
+                app.touch_actions.and_then(|m| m.right_double),
+            ),
+            touch_action_row(
+                fl!("settings-touch-action-left-triple"),
+                TouchControl::LeftTriple,
+                app.touch_actions.and_then(|m| m.left_triple),
+            ),
+            touch_action_row(
+                fl!("settings-touch-action-right-triple"),
+                TouchControl::RightTriple,
+                app.touch_actions.and_then(|m| m.right_triple),
+            ),
+            status_line(&app.touch_actions_status),
+        ]
+        .spacing(12),
+    );
+
     column![
         header,
         rename_section,
         toggles_section,
+        touch_action_section,
         notification_volume_section,
         scheduled_power_off_section,
         disconnect_power_off_section,
@@ -329,6 +391,49 @@ fn wired_toggle_row<'a>(
         status_line(status),
     ]
     .spacing(6)
+    .into()
+}
+
+/// Wraps a [`TouchAction`] with a localized `Display` for [`pick_list`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ActionOption(TouchAction);
+
+impl std::fmt::Display for ActionOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self.0 {
+            TouchAction::None => fl!("settings-touch-action-none"),
+            TouchAction::PlayPause => fl!("settings-touch-action-play-pause"),
+            TouchAction::Previous => fl!("settings-touch-action-previous"),
+            TouchAction::Next => fl!("settings-touch-action-next"),
+            TouchAction::VoiceAssistant => fl!("settings-touch-action-voice-assistant"),
+            TouchAction::VolumeUp => fl!("settings-touch-action-volume-up"),
+            TouchAction::VolumeDown => fl!("settings-touch-action-volume-down"),
+            TouchAction::GameMode => fl!("settings-touch-action-game-mode"),
+            TouchAction::Anc => fl!("settings-touch-action-anc"),
+        };
+        write!(f, "{label}")
+    }
+}
+
+/// One touch-action row: a label plus a dropdown of every possible action,
+/// wired to [`Message::SetTouchAction`] for this specific control.
+fn touch_action_row<'a>(
+    label: String,
+    control: TouchControl,
+    current: Option<TouchAction>,
+) -> Element<'a, Message> {
+    let options: Vec<ActionOption> = TouchAction::ALL.into_iter().map(ActionOption).collect();
+    let selected = current.map(ActionOption);
+
+    row![
+        text(label).size(13).width(Length::Fill),
+        pick_list(options, selected, move |ActionOption(action)| {
+            Message::SetTouchAction(control, action)
+        })
+        .width(Length::Fixed(220.0)),
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center)
     .into()
 }
 

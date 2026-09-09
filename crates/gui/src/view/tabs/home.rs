@@ -4,6 +4,7 @@ use crate::view::components::{badge, battery, card};
 use iced::widget::{Space, button, column, container, row, slider, text};
 use iced::{Alignment, Element, Length, Theme};
 use qcyx_core::battery::{BatteryComponent, BatteryStatus};
+use qcyx_core::game_mode::GameMode;
 use qcyx_i18n::fl;
 
 pub fn view(app: &App) -> Element<'_, Message> {
@@ -96,8 +97,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 .size(12)
                 .style(text::secondary),
             row![
+                game_mode_action_button(app),
                 action_button("🔎", fl!("home-action-find-device")),
-                action_button("⬆️", fl!("home-action-check-update")),
             ]
             .spacing(12),
         ]
@@ -203,6 +204,77 @@ fn balance_label(value: u8) -> String {
             fl!("anc-balance-left", percent = ((50 - value) * 2).to_string())
         }
     }
+}
+
+/// Quick toggle for game mode — same tile layout as [`action_button`], but
+/// wired to [`Message::SetGameMode`] and reflecting the live state instead
+/// of a "coming soon" badge.
+fn game_mode_action_button(app: &App) -> Element<'_, Message> {
+    let is_on = matches!(app.game_mode, Some(GameMode::On));
+    let next = if is_on { GameMode::Off } else { GameMode::On };
+
+    column![
+        button(
+            column![
+                text("🎮").size(20),
+                text(fl!("home-action-game-mode")).size(12)
+            ]
+            .spacing(6)
+            .align_x(Alignment::Center)
+            .width(Length::Fill)
+        )
+        .padding([14, 18])
+        .width(Length::Fill)
+        .style(move |theme: &Theme, status| {
+            let ext = theme.extended_palette();
+            let hovered = matches!(status, iced::widget::button::Status::Hovered);
+
+            let background = if is_on {
+                ext.primary.weak.color.scale_alpha(0.35)
+            } else if hovered {
+                ext.background.strong.color.scale_alpha(0.4)
+            } else {
+                ext.background.base.color
+            };
+
+            iced::widget::button::Style {
+                background: Some(background.into()),
+                text_color: if is_on {
+                    ext.primary.strong.color
+                } else {
+                    ext.background.base.text.scale_alpha(0.5)
+                },
+                border: iced::Border {
+                    color: if is_on {
+                        ext.primary.strong.color
+                    } else {
+                        ext.background.strong.color
+                    },
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .on_press(Message::SetGameMode(next)),
+        container(badge::status(
+            if is_on {
+                fl!("home-action-on")
+            } else {
+                fl!("home-action-off")
+            },
+            if is_on {
+                badge::Tone::Success
+            } else {
+                badge::Tone::Neutral
+            },
+        ))
+        .width(Length::Fill)
+        .align_x(Alignment::Center),
+    ]
+    .spacing(6)
+    .width(Length::Fill)
+    .into()
 }
 
 fn action_button(icon: &'static str, label: String) -> Element<'static, Message> {

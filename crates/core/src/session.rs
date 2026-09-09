@@ -7,9 +7,12 @@ use crate::disconnect_power_off::DisconnectPowerOff;
 use crate::eq::EqPreset;
 use crate::error::CoreError;
 use crate::game_mode::GameMode;
+use crate::ldac::Ldac;
+use crate::multipoint::Multipoint;
 use crate::notification_volume::NotificationVolume;
 use crate::scheduled_power_off::ScheduledPowerOff;
 use crate::sleep_mode::SleepMode;
+use crate::touch_action::{TouchAction, TouchActionMap, TouchControl};
 use crate::version::FirmwareVersion;
 use crate::wear_detection::WearDetection;
 use std::sync::OnceLock;
@@ -45,6 +48,12 @@ pub struct ConnectionInfo {
     pub initial_game_mode: Option<GameMode>,
     /// Sleep mode, queried at connect time.
     pub initial_sleep_mode: Option<SleepMode>,
+    /// LDAC codec toggle, queried at connect time.
+    pub initial_ldac: Option<Ldac>,
+    /// Dual-device (multipoint) connection toggle, queried at connect time.
+    pub initial_multipoint: Option<Multipoint>,
+    /// Touch-action map, read at connect time from its own characteristic.
+    pub initial_touch_actions: Option<TouchActionMap>,
 }
 
 /// Connects the shared session if it isn't already open.
@@ -128,6 +137,30 @@ pub async fn ensure_connected() -> Result<ConnectionInfo, CoreError> {
         }
     };
 
+    let initial_ldac = match handle.get_ldac().await {
+        Ok(state) => state,
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial LDAC state");
+            None
+        }
+    };
+
+    let initial_multipoint = match handle.get_multipoint().await {
+        Ok(state) => state,
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial multipoint state");
+            None
+        }
+    };
+
+    let initial_touch_actions = match handle.read_touch_actions().await {
+        Ok(map) => Some(map),
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial touch-action map");
+            None
+        }
+    };
+
     *slot = Some(handle);
     Ok(ConnectionInfo {
         initial_anc_scene,
@@ -140,6 +173,9 @@ pub async fn ensure_connected() -> Result<ConnectionInfo, CoreError> {
         initial_disconnect_power_off,
         initial_game_mode,
         initial_sleep_mode,
+        initial_ldac,
+        initial_multipoint,
+        initial_touch_actions,
     })
 }
 
@@ -293,6 +329,42 @@ pub async fn set_sleep_mode(state: SleepMode) -> Result<(), CoreError> {
 
     let handle = slot.as_ref().expect("just initialized");
     handle.set_sleep_mode(state).await
+}
+
+/// Sends an LDAC-toggle write over the shared connection.
+pub async fn set_ldac(state: Ldac) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_ldac(state).await
+}
+
+/// Sends a multipoint-toggle write over the shared connection.
+pub async fn set_multipoint(state: Multipoint) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_multipoint(state).await
+}
+
+/// Sends a touch-action write over the shared connection.
+pub async fn set_touch_action(control: TouchControl, action: TouchAction) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_touch_action(control, action).await
 }
 
 /// Selects an equalizer preset over the shared connection.
