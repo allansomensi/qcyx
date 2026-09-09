@@ -35,4 +35,9 @@ pub enum CoreError {
     /// length can express. See [`crate::protocol::MAX_PARAMETERS`].
     #[error("Frame too large: {0} parameter bytes (protocol limit is 253)")]
     FrameTooLarge(usize),
+
+    /// The requested device name was empty once trimmed and stripped of
+    /// control characters — see [`crate::device_actions::set_name`].
+    #[error("Device name is empty after trimming and removing control characters")]
+    InvalidName,
 }

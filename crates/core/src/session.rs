@@ -24,6 +24,38 @@ fn shared_slot() -> &'static Mutex<Option<DeviceHandle>> {
     SHARED.get_or_init(|| Mutex::new(None))
 }
 
+/// Runs an operation against the shared session, connecting first if no
+/// session is open, and drops the session whenever the operation errors.
+///
+/// Every setter/getter below used to repeat this by hand, and all but
+/// `set_anc_scene` skipped the error cleanup: a single failed write (a GATT
+/// timeout, an adapter hiccup) left a broken `DeviceHandle` sitting in the
+/// slot. Because `slot.is_some()` was the only reconnect trigger, every
+/// subsequent call reused that same dead handle and failed the same way —
+/// silently, forever — until [`watch_disconnect`](crate) or an app restart
+/// happened to clear it. Centralizing the pattern here makes that cleanup
+/// unconditional instead of something each call site has to remember.
+macro_rules! with_session {
+    ($handle:ident => $body:expr) => {{
+        let mut slot = shared_slot().lock().await;
+
+        if slot.is_none() {
+            *slot = Some(client::connect().await?);
+        }
+
+        let $handle = slot.as_ref().expect("just initialized above");
+        let result = $body;
+
+        if result.is_err()
+            && let Some(handle) = slot.take()
+        {
+            let _ = handle.disconnect().await;
+        }
+
+        result
+    }};
+}
+
 /// Static, connection-scoped info read right after a fresh connection is established.
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionInfo {
@@ -181,202 +213,82 @@ pub async fn ensure_connected() -> Result<ConnectionInfo, CoreError> {
 
 /// Sends an ANC scene over the shared connection.
 pub async fn set_anc_scene(scene: AncScene) -> Result<AncConfirmation, CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    let result = handle.send_anc_and_confirm(command::anc_scene(scene)).await;
-
-    if result.is_err()
-        && let Some(handle) = slot.take()
-    {
-        let _ = handle.disconnect().await;
-    }
-
-    result
+    with_session!(handle => handle.send_anc_and_confirm(command::anc_scene(scene)).await)
 }
 
 /// Reads the battery status over the shared connection.
 pub async fn read_battery() -> Result<BatteryStatus, CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.read_battery().await
+    with_session!(handle => handle.read_battery().await)
 }
 
 /// Sends a balance write over the shared connection.
 pub async fn set_balance(value: u8) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_balance(value).await
+    with_session!(handle => handle.set_balance(value).await)
 }
 
 /// Renames the device over the shared connection.
 pub async fn set_name(name: &str) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_name(name).await
+    with_session!(handle => handle.set_name(name).await)
 }
 
 /// Resets settings to default over the shared connection.
 pub async fn reset_default() -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.reset_default().await
+    with_session!(handle => handle.reset_default().await)
 }
 
 /// Factory-resets the device over the shared connection.
 pub async fn factory_reset() -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.factory_reset().await
+    with_session!(handle => handle.factory_reset().await)
 }
 
 /// Sends a wear-detection write over the shared connection.
 pub async fn set_wear_detection(state: WearDetection) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_wear_detection(state).await
+    with_session!(handle => handle.set_wear_detection(state).await)
 }
 
 /// Sends a notification-volume write over the shared connection.
 pub async fn set_notification_volume(level: NotificationVolume) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_notification_volume(level).await
+    with_session!(handle => handle.set_notification_volume(level).await)
 }
 
 /// Sends a scheduled-power-off write over the shared connection.
 pub async fn set_scheduled_power_off(value: ScheduledPowerOff) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_scheduled_power_off(value).await
+    with_session!(handle => handle.set_scheduled_power_off(value).await)
 }
 
 /// Sends a disconnect-power-off write over the shared connection.
 pub async fn set_disconnect_power_off(value: DisconnectPowerOff) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_disconnect_power_off(value).await
+    with_session!(handle => handle.set_disconnect_power_off(value).await)
 }
 
 /// Sends a game-mode write over the shared connection.
 pub async fn set_game_mode(state: GameMode) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_game_mode(state).await
+    with_session!(handle => handle.set_game_mode(state).await)
 }
 
 /// Sends a sleep-mode write over the shared connection.
 pub async fn set_sleep_mode(state: SleepMode) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_sleep_mode(state).await
+    with_session!(handle => handle.set_sleep_mode(state).await)
 }
 
 /// Sends an LDAC-toggle write over the shared connection.
 pub async fn set_ldac(state: Ldac) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_ldac(state).await
+    with_session!(handle => handle.set_ldac(state).await)
 }
 
 /// Sends a multipoint-toggle write over the shared connection.
 pub async fn set_multipoint(state: Multipoint) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_multipoint(state).await
+    with_session!(handle => handle.set_multipoint(state).await)
 }
 
 /// Sends a touch-action write over the shared connection.
 pub async fn set_touch_action(control: TouchControl, action: TouchAction) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_touch_action(control, action).await
+    with_session!(handle => handle.set_touch_action(control, action).await)
 }
 
 /// Selects an equalizer preset over the shared connection.
 pub async fn set_eq_preset(preset: EqPreset) -> Result<(), CoreError> {
-    let mut slot = shared_slot().lock().await;
-
-    if slot.is_none() {
-        *slot = Some(client::connect().await?);
-    }
-
-    let handle = slot.as_ref().expect("just initialized");
-    handle.set_eq_preset(preset).await
+    with_session!(handle => handle.set_eq_preset(preset).await)
 }
 
 /// Returns `true` if the shared connection is open and the underlying BLE link is alive.

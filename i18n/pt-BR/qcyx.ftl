@@ -36,6 +36,7 @@ cli-factory-reset-confirm = Isso vai apagar todas as configurações do disposit
 cli-factory-reset-cancelled = Restauração de fábrica cancelada.
 cli-factory-reset-done = Restauração de fábrica enviada.
 cli-rename-done = Dispositivo renomeado para "{$name}". O novo nome aparece depois de reconectar.
+cli-rename-empty = O nome informado ficou vazio depois de removido espaços e caracteres de controle — nada foi enviado ao dispositivo.
 
 cli-notification-volume-set = Volume de notificação definido.
 cli-scheduled-power-off-set = Desligamento programado definido.
@@ -52,7 +53,6 @@ waiting-subtitle = Certifique-se de que seus fones estão por perto e fora da ca
 connected-header = Conectado
 error-title = Erro de Conexão
 error-unknown = Erro desconhecido
-error-operation-timeout = The Bluetooth stack stopped responding, so the operation was abandoned. Reconnect and try again.
 
 gui-anc-title = Controle de Ruído
 gui-anc-normal = Normal

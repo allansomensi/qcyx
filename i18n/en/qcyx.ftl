@@ -36,6 +36,7 @@ cli-factory-reset-confirm = This will erase all settings on the device and canno
 cli-factory-reset-cancelled = Factory reset cancelled.
 cli-factory-reset-done = Factory reset sent.
 cli-rename-done = Device renamed to "{$name}". The new name will show up after reconnecting.
+cli-rename-empty = The name was empty once whitespace and control characters were removed — nothing was sent to the device.
 
 cli-notification-volume-set = Notification volume set.
 cli-scheduled-power-off-set = Scheduled power-off timer set.

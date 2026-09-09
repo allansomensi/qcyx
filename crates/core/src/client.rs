@@ -638,8 +638,17 @@ impl DeviceHandle {
     }
 
     /// Renames the device's Bluetooth pairing name.
+    ///
+    /// Rejects a name that sanitizes to nothing (blank, or only control
+    /// characters): the CLI takes a raw `String` with no client-side check,
+    /// so without this an empty `PAIRNAME` write goes out silently and the
+    /// caller is told the rename "succeeded" for a name that was never sent.
     pub async fn set_name(&self, name: &str) -> Result<(), CoreError> {
-        self.send(device_actions::set_name(name)).await
+        let cmd = device_actions::set_name(name);
+        if cmd.parameters.is_empty() {
+            return Err(CoreError::InvalidName);
+        }
+        self.send(cmd).await
     }
 
     /// Selects an equalizer preset.

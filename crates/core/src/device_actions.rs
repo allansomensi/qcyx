@@ -30,11 +30,14 @@ pub fn factory_reset() -> Command {
 /// name, on a device that offers no undo.
 pub const MAX_NAME_BYTES: usize = 32;
 
-/// Builds the device-rename write command.
-///
-/// The name is trimmed, stripped of control characters, and truncated at a char
+/// Sanitizes and truncates a name exactly as it will be written to the
+/// device: trimmed, stripped of control characters, and cut at a char
 /// boundary to [`MAX_NAME_BYTES`].
-pub fn set_name(name: &str) -> Command {
+///
+/// Exposed so callers (the CLI in particular, which takes a raw `String`
+/// with no input mask) can validate or display the name that will actually
+/// reach the device, rather than the untouched argument the user typed.
+pub fn sanitize(name: &str) -> String {
     let sanitized: String = name.trim().chars().filter(|c| !c.is_control()).collect();
 
     let mut end = sanitized.len().min(MAX_NAME_BYTES);
@@ -42,7 +45,15 @@ pub fn set_name(name: &str) -> Command {
         end -= 1;
     }
 
-    Command::new(opcode::PAIRNAME, sanitized.as_bytes()[..end].to_vec())
+    sanitized[..end].to_string()
+}
+
+/// Builds the device-rename write command.
+///
+/// The name is trimmed, stripped of control characters, and truncated at a char
+/// boundary to [`MAX_NAME_BYTES`].
+pub fn set_name(name: &str) -> Command {
+    Command::new(opcode::PAIRNAME, sanitize(name).into_bytes())
 }
 
 #[cfg(test)]
@@ -93,5 +104,15 @@ mod tests {
     #[test]
     fn every_name_stays_framable() {
         assert!(set_name(&"a".repeat(300)).validate().is_ok());
+    }
+
+    #[test]
+    fn blank_or_control_only_input_sanitizes_to_empty_parameters() {
+        // `DeviceHandle::set_name` treats empty `parameters` as the signal to
+        // reject the rename instead of writing a blank `PAIRNAME` — this pins
+        // the sanitizer's half of that contract.
+        assert!(set_name("   ").parameters.is_empty());
+        assert!(set_name("\u{0}\u{1}\n\t").parameters.is_empty());
+        assert!(set_name("").parameters.is_empty());
     }
 }

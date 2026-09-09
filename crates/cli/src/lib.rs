@@ -66,8 +66,18 @@ pub async fn run() -> Result<(), CoreError> {
             Ok(())
         }
         Commands::Rename { name } => {
-            qcyx_core::client::set_name(&name).await?;
-            println!("{}", fl!("cli-rename-done", name = name));
+            // The device only ever stores the sanitized/truncated form, so
+            // reject and report on that form up front — both to avoid a
+            // doomed BLE round trip for a blank name, and so the success
+            // message doesn't claim a name the device never received.
+            let sanitized = qcyx_core::device_actions::sanitize(&name);
+            if sanitized.is_empty() {
+                println!("{}", fl!("cli-rename-empty"));
+                return Ok(());
+            }
+
+            qcyx_core::client::set_name(&sanitized).await?;
+            println!("{}", fl!("cli-rename-done", name = sanitized));
             Ok(())
         }
         Commands::NotificationVolume { level } => {
