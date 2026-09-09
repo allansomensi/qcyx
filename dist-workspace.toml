@@ -14,3 +14,7 @@ targets = [
 ]
 install-path = "CARGO_HOME"
 install-updater = true
+
+[dist.dependencies.apt]
+libdbus-1-dev = "*"
+pkg-config = "*"
