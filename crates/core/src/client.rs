@@ -12,12 +12,19 @@ use crate::device::profile::{
     BATTERY_UUID, COMMAND_UUID, NOTIFY_UUID, QCY_COMPANY_ID, SERVICE_UUID, VERSION_UUID,
 };
 use crate::device_actions;
+use crate::disconnect_power_off::{self, DisconnectPowerOff};
 use crate::eq::EqPreset;
 use crate::error::CoreError;
+use crate::game_mode::{self, GameMode};
+use crate::notification_volume::{self, NotificationVolume};
 use crate::protocol::Command;
+use crate::query;
 use crate::response::{self, Event};
+use crate::scheduled_power_off::{self, ScheduledPowerOff};
+use crate::sleep_mode::{self, SleepMode};
 use crate::timeout::{budget, guard};
 use crate::version::FirmwareVersion;
+use crate::wear_detection::{self, WearDetection};
 use btleplug::api::{
     Central, CentralEvent, CharPropFlags, Characteristic, Manager as _, Peripheral as _,
     ScanFilter, WriteType,
@@ -37,6 +44,9 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// How long to wait for the asynchronous `ANC_RESULT` confirmation.
 const ANC_CONFIRM_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long to wait for a queried parameter's notify reply.
+const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Retries for the initial BLE connect.
 const CONNECT_RETRIES: u32 = 3;
@@ -424,6 +434,118 @@ impl DeviceHandle {
         self.send(balance::set_balance(value)).await
     }
 
+    /// Sends a `0xFE` query for `target_opcode` and waits for its notify
+    /// reply, returning the raw parameter bytes.
+    ///
+    /// Covers every setting the official app polls on screen load but that
+    /// [`Self::read_state_sync`]'s single blob read doesn't carry — see
+    /// [`crate::query`].
+    pub async fn query_param(&self, target_opcode: u8) -> Result<Vec<u8>, CoreError> {
+        let mut notifications = guard(budget::GATT_OP, "notifications", async {
+            Ok(self.peripheral.notifications().await?)
+        })
+        .await?;
+
+        self.send(query::request(target_opcode)).await?;
+
+        let deadline = time::Instant::now() + QUERY_TIMEOUT;
+        loop {
+            let remaining = deadline.saturating_duration_since(time::Instant::now());
+            if remaining.is_zero() {
+                return Err(CoreError::OperationTimeout("parameter query"));
+            }
+
+            let data = match time::timeout(remaining, notifications.next()).await {
+                Ok(Some(data)) => data,
+                Ok(None) => return Err(CoreError::ConnectionDropped),
+                Err(_elapsed) => return Err(CoreError::OperationTimeout("parameter query")),
+            };
+
+            let Ok(commands) = Command::parse(&data.value) else {
+                continue;
+            };
+
+            if let Some(cmd) = commands.into_iter().find(|c| c.opcode == target_opcode) {
+                return Ok(cmd.parameters);
+            }
+        }
+    }
+
+    /// Sets the notification volume.
+    pub async fn set_notification_volume(
+        &self,
+        level: NotificationVolume,
+    ) -> Result<(), CoreError> {
+        self.send(notification_volume::set_notification_volume(level))
+            .await
+    }
+
+    /// Reads the current notification volume.
+    pub async fn get_notification_volume(&self) -> Result<Option<NotificationVolume>, CoreError> {
+        let params = self.query_param(notification_volume::OPCODE).await?;
+        Ok(notification_volume::parse_notification_volume(&params))
+    }
+
+    /// Sets the scheduled (idle-independent) power-off timer.
+    pub async fn set_scheduled_power_off(&self, value: ScheduledPowerOff) -> Result<(), CoreError> {
+        self.send(scheduled_power_off::set_scheduled_power_off(value))
+            .await
+    }
+
+    /// Reads the current scheduled power-off timer.
+    pub async fn get_scheduled_power_off(&self) -> Result<Option<ScheduledPowerOff>, CoreError> {
+        let params = self.query_param(scheduled_power_off::OPCODE).await?;
+        Ok(scheduled_power_off::parse_scheduled_power_off(&params))
+    }
+
+    /// Sets the power-off-after-disconnect timer.
+    pub async fn set_disconnect_power_off(
+        &self,
+        value: DisconnectPowerOff,
+    ) -> Result<(), CoreError> {
+        self.send(disconnect_power_off::set_disconnect_power_off(value))
+            .await
+    }
+
+    /// Reads the current power-off-after-disconnect timer.
+    pub async fn get_disconnect_power_off(&self) -> Result<Option<DisconnectPowerOff>, CoreError> {
+        let params = self.query_param(disconnect_power_off::OPCODE).await?;
+        Ok(disconnect_power_off::parse_disconnect_power_off(&params))
+    }
+
+    /// Sets in-ear wear detection and its ANC-on-wear sub-toggle.
+    pub async fn set_wear_detection(&self, state: WearDetection) -> Result<(), CoreError> {
+        self.send(wear_detection::set_wear_detection(state)).await
+    }
+
+    /// Reads the current wear-detection state.
+    pub async fn get_wear_detection(&self) -> Result<Option<WearDetection>, CoreError> {
+        let params = self.query_param(wear_detection::OPCODE).await?;
+        Ok(wear_detection::parse_wear_detection(&params))
+    }
+
+    /// Sets game (low-latency) mode.
+    pub async fn set_game_mode(&self, state: GameMode) -> Result<(), CoreError> {
+        self.send(game_mode::set_game_mode(state)).await
+    }
+
+    /// Reads the current game-mode state.
+    pub async fn get_game_mode(&self) -> Result<Option<GameMode>, CoreError> {
+        let params = self.query_param(game_mode::OPCODE).await?;
+        Ok(game_mode::parse_game_mode(&params))
+    }
+
+    /// Sets sleep mode.
+    pub async fn set_sleep_mode(&self, state: SleepMode) -> Result<(), CoreError> {
+        self.send(sleep_mode::set_sleep_mode(state)).await
+    }
+
+    /// Reads the current sleep-mode state.
+    pub async fn get_sleep_mode(&self) -> Result<Option<SleepMode>, CoreError> {
+        let params = self.query_param(sleep_mode::OPCODE).await?;
+        Ok(sleep_mode::parse_sleep_mode(&params))
+    }
+
     /// Resets settings to default.
     pub async fn reset_default(&self) -> Result<(), CoreError> {
         self.send(device_actions::reset_default()).await
@@ -778,5 +900,89 @@ pub async fn set_name(name: &str) -> Result<(), CoreError> {
 pub async fn set_eq_preset(preset: EqPreset) -> Result<(), CoreError> {
     let handle = connect().await?;
     let result = handle.set_eq_preset(preset).await;
+    finish(handle, result).await
+}
+
+/// Connects, sets notification volume, and disconnects.
+pub async fn set_notification_volume(level: NotificationVolume) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_notification_volume(level).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads notification volume, and disconnects.
+pub async fn get_notification_volume() -> Result<Option<NotificationVolume>, CoreError> {
+    let handle = connect().await?;
+    let result = handle.get_notification_volume().await;
+    finish(handle, result).await
+}
+
+/// Connects, sets the scheduled power-off timer, and disconnects.
+pub async fn set_scheduled_power_off(value: ScheduledPowerOff) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_scheduled_power_off(value).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads the scheduled power-off timer, and disconnects.
+pub async fn get_scheduled_power_off() -> Result<Option<ScheduledPowerOff>, CoreError> {
+    let handle = connect().await?;
+    let result = handle.get_scheduled_power_off().await;
+    finish(handle, result).await
+}
+
+/// Connects, sets the power-off-after-disconnect timer, and disconnects.
+pub async fn set_disconnect_power_off(value: DisconnectPowerOff) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_disconnect_power_off(value).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads the power-off-after-disconnect timer, and disconnects.
+pub async fn get_disconnect_power_off() -> Result<Option<DisconnectPowerOff>, CoreError> {
+    let handle = connect().await?;
+    let result = handle.get_disconnect_power_off().await;
+    finish(handle, result).await
+}
+
+/// Connects, sets wear detection and its ANC-on-wear sub-toggle, and disconnects.
+pub async fn set_wear_detection(state: WearDetection) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_wear_detection(state).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads wear-detection state, and disconnects.
+pub async fn get_wear_detection() -> Result<Option<WearDetection>, CoreError> {
+    let handle = connect().await?;
+    let result = handle.get_wear_detection().await;
+    finish(handle, result).await
+}
+
+/// Connects, sets game mode, and disconnects.
+pub async fn set_game_mode(state: GameMode) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_game_mode(state).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads game-mode state, and disconnects.
+pub async fn get_game_mode() -> Result<Option<GameMode>, CoreError> {
+    let handle = connect().await?;
+    let result = handle.get_game_mode().await;
+    finish(handle, result).await
+}
+
+/// Connects, sets sleep mode, and disconnects.
+pub async fn set_sleep_mode(state: SleepMode) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_sleep_mode(state).await;
+    finish(handle, result).await
+}
+
+/// Connects, reads sleep-mode state, and disconnects.
+pub async fn get_sleep_mode() -> Result<Option<SleepMode>, CoreError> {
+    let handle = connect().await?;
+    let result = handle.get_sleep_mode().await;
     finish(handle, result).await
 }

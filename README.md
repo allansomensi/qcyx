@@ -30,11 +30,17 @@ Configuration of QCY earbuds is officially restricted to the proprietary mobile 
 
 - ✅ **Active Noise Cancellation (ANC):** Full control over Normal, Transparency, and all specific Noise Cancelling modes.
 - ✅ **Battery Monitoring:** Read current battery status.
-- ✅ **Audio Controls:** Set equalizer presets (Spatial, Default, Popular, Bass Boost, Rock, Soft, Classic) and adjust channel balance.
+- ✅ **Audio Controls:** Set equalizer presets and adjust channel balance.
+- ✅ **Notification Volume:** Set the earbuds' notification volume.
+- ✅ **Power-Off Timers:** Scheduled power-off and power-off after disconnect.
+- ✅ **Wear Detection:** Toggle in-ear detection.
+- ✅ **Game Mode:** Toggle low-latency audio for gaming.
+- ✅ **Sleep Mode:** Toggle sleep mode.
 - ✅ **Device Management:** Read firmware version, rename the device, reset to default, and factory reset.
 - ✅ **Multi-language Support:** UI available in English and Portuguese (pt-BR).
 - 🚧 **Click actions:** Single/double/triple tap, per earbud.
-- 🚧 **Game mode:** Toggle low-latency audio for gaming and video synchronization.
+- 🚧 **LDAC:** High-resolution codec toggle.
+- 🚧 **Dual device connection:** Connect to two devices at once.
 - 🚧 **Custom EQ:** Per-band editing.
 - 🚧 **Find my earbuds:** Trigger a high-frequency sound to locate misplaced earbuds.
 - 🚧 **Firmware update:** Flash official firmware updates over the air (OTA).
@@ -113,6 +119,34 @@ qcyx-cli eq bass-boost
 qcyx-cli eq rock
 qcyx-cli eq soft
 qcyx-cli eq classic
+
+# Notification volume
+qcyx-cli notification-volume low
+qcyx-cli notification-volume medium
+qcyx-cli notification-volume high
+qcyx-cli notification-volume max
+
+# Scheduled power-off timer (minutes, or "off" to disable)
+qcyx-cli scheduled-power-off 30
+qcyx-cli scheduled-power-off 183
+qcyx-cli scheduled-power-off off
+
+# Power-off-after-disconnect timer (minutes, or "never")
+qcyx-cli disconnect-power-off 10
+qcyx-cli disconnect-power-off never
+
+# In-ear wear detection and its ANC-on-wear sub-toggle
+qcyx-cli wear-detection --enabled
+qcyx-cli wear-detection --enabled --anc-on-wear=false
+qcyx-cli wear-detection
+
+# Game mode
+qcyx-cli game-mode on
+qcyx-cli game-mode off
+
+# Sleep mode
+qcyx-cli sleep-mode on
+qcyx-cli sleep-mode off
 
 # Reset settings to default
 qcyx-cli reset-default

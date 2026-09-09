@@ -1,7 +1,9 @@
 use crate::{app::App, message::Message, state::AppState};
 use iced::Task;
 use qcyx_core::client::AncConfirmation;
+use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::session;
+use qcyx_core::wear_detection::WearDetection;
 use qcyx_i18n::fl;
 use tracing::{debug, error, info};
 
@@ -21,6 +23,12 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             app.rename_input = info.device_name.clone().unwrap_or_default();
             app.device_name = info.device_name;
             app.firmware_version = info.firmware_version;
+            app.wear_detection = info.initial_wear_detection;
+            app.notification_volume = info.initial_notification_volume;
+            app.scheduled_power_off = info.initial_scheduled_power_off;
+            app.disconnect_power_off = info.initial_disconnect_power_off;
+            app.game_mode = info.initial_game_mode;
+            app.sleep_mode = info.initial_sleep_mode;
             Task::none()
         }
         Message::BatteryResult(result) => {
@@ -56,6 +64,19 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             app.reset_default_status = None;
             app.factory_reset_armed = false;
             app.factory_reset_status = None;
+            app.wear_detection = None;
+            app.wear_detection_status = None;
+            app.notification_volume = None;
+            app.notification_volume_status = None;
+            app.scheduled_power_off = None;
+            app.scheduled_power_off_status = None;
+            app.scheduled_power_off_custom_input = String::new();
+            app.disconnect_power_off = None;
+            app.disconnect_power_off_status = None;
+            app.game_mode = None;
+            app.game_mode_status = None;
+            app.sleep_mode = None;
+            app.sleep_mode_status = None;
             app.status_log = None;
             Task::none()
         }
@@ -250,6 +271,177 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                 Err(e) => {
                     error!("Failed to set EQ preset: {e}");
                     app.eq_status = Some(fl!("eq-preset-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::WearDetectionToggled(enabled) => {
+            // Preserves the ANC-on-wear sub-flag, which this toggle doesn't
+            // expose — defaults to on, matching the device's own
+            // connect-time default when no read has happened yet.
+            let anc_on_wear = app.wear_detection.map(|s| s.anc_on_wear).unwrap_or(true);
+            let new_state = WearDetection {
+                wear_detection: enabled,
+                anc_on_wear,
+            };
+            app.wear_detection = Some(new_state);
+            app.wear_detection_status = None;
+            Task::perform(
+                async move {
+                    session::set_wear_detection(new_state)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::WearDetectionResult(new_state, result),
+            )
+        }
+        Message::WearDetectionResult(state, result) => {
+            match result {
+                Ok(()) => {
+                    info!("Wear detection set: {state:?}");
+                }
+                Err(e) => {
+                    error!("Failed to set wear detection: {e}");
+                    app.wear_detection_status = Some(fl!("settings-inear-toggle-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::SetNotificationVolume(level) => {
+            info!("Requesting notification volume: {level:?}");
+            app.notification_volume = Some(level);
+            app.notification_volume_status = None;
+            Task::perform(
+                async move {
+                    session::set_notification_volume(level)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::NotificationVolumeResult(level, result),
+            )
+        }
+        Message::NotificationVolumeResult(level, result) => {
+            match result {
+                Ok(()) => info!("Notification volume set: {level:?}"),
+                Err(e) => {
+                    error!("Failed to set notification volume: {e}");
+                    app.notification_volume_status =
+                        Some(fl!("settings-notification-volume-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::SetScheduledPowerOff(value) => {
+            info!("Requesting scheduled power-off: {value:?}");
+            app.scheduled_power_off = Some(value);
+            app.scheduled_power_off_status = None;
+            Task::perform(
+                async move {
+                    session::set_scheduled_power_off(value)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::ScheduledPowerOffResult(value, result),
+            )
+        }
+        Message::ScheduledPowerOffResult(value, result) => {
+            match result {
+                Ok(()) => info!("Scheduled power-off set: {value:?}"),
+                Err(e) => {
+                    error!("Failed to set scheduled power-off: {e}");
+                    app.scheduled_power_off_status =
+                        Some(fl!("settings-scheduled-poweroff-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::ScheduledPowerOffCustomInputChanged(value) => {
+            app.scheduled_power_off_custom_input = value;
+            Task::none()
+        }
+        Message::ScheduledPowerOffCustomSubmit => {
+            let Ok(minutes) = app.scheduled_power_off_custom_input.trim().parse::<u16>() else {
+                return Task::none();
+            };
+            let value = ScheduledPowerOff::Minutes(minutes);
+            info!("Requesting scheduled power-off: {value:?}");
+            app.scheduled_power_off = Some(value);
+            app.scheduled_power_off_status = None;
+            Task::perform(
+                async move {
+                    session::set_scheduled_power_off(value)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::ScheduledPowerOffResult(value, result),
+            )
+        }
+        Message::SetDisconnectPowerOff(value) => {
+            info!("Requesting disconnect power-off: {value:?}");
+            app.disconnect_power_off = Some(value);
+            app.disconnect_power_off_status = None;
+            Task::perform(
+                async move {
+                    session::set_disconnect_power_off(value)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::DisconnectPowerOffResult(value, result),
+            )
+        }
+        Message::DisconnectPowerOffResult(value, result) => {
+            match result {
+                Ok(()) => info!("Disconnect power-off set: {value:?}"),
+                Err(e) => {
+                    error!("Failed to set disconnect power-off: {e}");
+                    app.disconnect_power_off_status =
+                        Some(fl!("settings-disconnect-poweroff-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::SetGameMode(state) => {
+            info!("Requesting game mode: {state:?}");
+            app.game_mode = Some(state);
+            app.game_mode_status = None;
+            Task::perform(
+                async move {
+                    session::set_game_mode(state)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::GameModeResult(state, result),
+            )
+        }
+        Message::GameModeResult(state, result) => {
+            match result {
+                Ok(()) => info!("Game mode set: {state:?}"),
+                Err(e) => {
+                    error!("Failed to set game mode: {e}");
+                    app.game_mode_status = Some(fl!("settings-game-mode-error", error = e));
+                }
+            }
+            Task::none()
+        }
+        Message::SetSleepMode(state) => {
+            info!("Requesting sleep mode: {state:?}");
+            app.sleep_mode = Some(state);
+            app.sleep_mode_status = None;
+            Task::perform(
+                async move {
+                    session::set_sleep_mode(state)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::SleepModeResult(state, result),
+            )
+        }
+        Message::SleepModeResult(state, result) => {
+            match result {
+                Ok(()) => info!("Sleep mode set: {state:?}"),
+                Err(e) => {
+                    error!("Failed to set sleep mode: {e}");
+                    app.sleep_mode_status = Some(fl!("settings-sleep-mode-error", error = e));
                 }
             }
             Task::none()

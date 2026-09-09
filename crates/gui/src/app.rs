@@ -6,8 +6,14 @@ use crate::{
 use iced::{Subscription, Task};
 use qcyx_core::battery::BatteryStatus;
 use qcyx_core::command::AncScene;
+use qcyx_core::disconnect_power_off::DisconnectPowerOff;
 use qcyx_core::eq::EqPreset;
+use qcyx_core::game_mode::GameMode;
+use qcyx_core::notification_volume::NotificationVolume;
+use qcyx_core::scheduled_power_off::ScheduledPowerOff;
+use qcyx_core::sleep_mode::SleepMode;
 use qcyx_core::version::FirmwareVersion;
+use qcyx_core::wear_detection::WearDetection;
 
 pub struct App {
     pub state: AppState,
@@ -42,6 +48,28 @@ pub struct App {
     /// Tracks confirmation state for factory reset.
     pub factory_reset_armed: bool,
     pub factory_reset_status: Option<String>,
+    /// In-ear wear detection and its ANC-on-wear sub-toggle. `None` until
+    /// read at connect time or unless the read failed — the toggle stays
+    /// disabled in that case rather than assuming a state.
+    pub wear_detection: Option<WearDetection>,
+    pub wear_detection_status: Option<String>,
+    /// Notification volume, read at connect time.
+    pub notification_volume: Option<NotificationVolume>,
+    pub notification_volume_status: Option<String>,
+    /// Scheduled (idle-independent) power-off timer, read at connect time.
+    pub scheduled_power_off: Option<ScheduledPowerOff>,
+    pub scheduled_power_off_status: Option<String>,
+    /// Text input for a custom scheduled-power-off minutes value.
+    pub scheduled_power_off_custom_input: String,
+    /// Power-off-after-disconnect timer, read at connect time.
+    pub disconnect_power_off: Option<DisconnectPowerOff>,
+    pub disconnect_power_off_status: Option<String>,
+    /// Game mode, read at connect time.
+    pub game_mode: Option<GameMode>,
+    pub game_mode_status: Option<String>,
+    /// Sleep mode, read at connect time.
+    pub sleep_mode: Option<SleepMode>,
+    pub sleep_mode_status: Option<String>,
     pub status_log: Option<String>,
 }
 
@@ -68,6 +96,19 @@ impl Default for App {
             reset_default_status: None,
             factory_reset_armed: false,
             factory_reset_status: None,
+            wear_detection: None,
+            wear_detection_status: None,
+            notification_volume: None,
+            notification_volume_status: None,
+            scheduled_power_off: None,
+            scheduled_power_off_status: None,
+            scheduled_power_off_custom_input: String::new(),
+            disconnect_power_off: None,
+            disconnect_power_off_status: None,
+            game_mode: None,
+            game_mode_status: None,
+            sleep_mode: None,
+            sleep_mode_status: None,
             status_log: None,
         }
     }

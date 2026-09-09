@@ -3,9 +3,15 @@
 use crate::battery::BatteryStatus;
 use crate::client::{self, AncConfirmation, DeviceHandle};
 use crate::command::{self, AncScene};
+use crate::disconnect_power_off::DisconnectPowerOff;
 use crate::eq::EqPreset;
 use crate::error::CoreError;
+use crate::game_mode::GameMode;
+use crate::notification_volume::NotificationVolume;
+use crate::scheduled_power_off::ScheduledPowerOff;
+use crate::sleep_mode::SleepMode;
 use crate::version::FirmwareVersion;
+use crate::wear_detection::WearDetection;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
@@ -26,6 +32,19 @@ pub struct ConnectionInfo {
     pub device_name: Option<String>,
     /// Firmware version.
     pub firmware_version: Option<FirmwareVersion>,
+    /// In-ear wear detection and its ANC-on-wear sub-toggle, queried at
+    /// connect time — not part of the state-sync blob, see [`crate::query`].
+    pub initial_wear_detection: Option<WearDetection>,
+    /// Notification volume, queried at connect time.
+    pub initial_notification_volume: Option<NotificationVolume>,
+    /// Scheduled (idle-independent) power-off timer, queried at connect time.
+    pub initial_scheduled_power_off: Option<ScheduledPowerOff>,
+    /// Power-off-after-disconnect timer, queried at connect time.
+    pub initial_disconnect_power_off: Option<DisconnectPowerOff>,
+    /// Game mode, queried at connect time.
+    pub initial_game_mode: Option<GameMode>,
+    /// Sleep mode, queried at connect time.
+    pub initial_sleep_mode: Option<SleepMode>,
 }
 
 /// Connects the shared session if it isn't already open.
@@ -61,12 +80,66 @@ pub async fn ensure_connected() -> Result<ConnectionInfo, CoreError> {
 
     let device_name = handle.device_name().map(str::to_string);
 
+    let initial_wear_detection = match handle.get_wear_detection().await {
+        Ok(state) => state,
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial wear-detection state");
+            None
+        }
+    };
+
+    let initial_notification_volume = match handle.get_notification_volume().await {
+        Ok(level) => level,
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial notification volume");
+            None
+        }
+    };
+
+    let initial_scheduled_power_off = match handle.get_scheduled_power_off().await {
+        Ok(value) => value,
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial scheduled power-off timer");
+            None
+        }
+    };
+
+    let initial_disconnect_power_off = match handle.get_disconnect_power_off().await {
+        Ok(value) => value,
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial disconnect power-off timer");
+            None
+        }
+    };
+
+    let initial_game_mode = match handle.get_game_mode().await {
+        Ok(state) => state,
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial game-mode state");
+            None
+        }
+    };
+
+    let initial_sleep_mode = match handle.get_sleep_mode().await {
+        Ok(state) => state,
+        Err(e) => {
+            tracing::debug!(error = %e, "failed to read initial sleep-mode state");
+            None
+        }
+    };
+
     *slot = Some(handle);
     Ok(ConnectionInfo {
         initial_anc_scene,
         initial_balance,
         device_name,
         firmware_version,
+        initial_wear_detection,
+        initial_notification_volume,
+        initial_scheduled_power_off,
+        initial_disconnect_power_off,
+        initial_game_mode,
+        initial_sleep_mode,
     })
 }
 
@@ -148,6 +221,78 @@ pub async fn factory_reset() -> Result<(), CoreError> {
 
     let handle = slot.as_ref().expect("just initialized");
     handle.factory_reset().await
+}
+
+/// Sends a wear-detection write over the shared connection.
+pub async fn set_wear_detection(state: WearDetection) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_wear_detection(state).await
+}
+
+/// Sends a notification-volume write over the shared connection.
+pub async fn set_notification_volume(level: NotificationVolume) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_notification_volume(level).await
+}
+
+/// Sends a scheduled-power-off write over the shared connection.
+pub async fn set_scheduled_power_off(value: ScheduledPowerOff) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_scheduled_power_off(value).await
+}
+
+/// Sends a disconnect-power-off write over the shared connection.
+pub async fn set_disconnect_power_off(value: DisconnectPowerOff) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_disconnect_power_off(value).await
+}
+
+/// Sends a game-mode write over the shared connection.
+pub async fn set_game_mode(state: GameMode) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_game_mode(state).await
+}
+
+/// Sends a sleep-mode write over the shared connection.
+pub async fn set_sleep_mode(state: SleepMode) -> Result<(), CoreError> {
+    let mut slot = shared_slot().lock().await;
+
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
+    }
+
+    let handle = slot.as_ref().expect("just initialized");
+    handle.set_sleep_mode(state).await
 }
 
 /// Selects an equalizer preset over the shared connection.

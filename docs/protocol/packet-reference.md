@@ -10,11 +10,18 @@ Master table of all known opcodes, in the `0xFF`-framed format ([frame-format.md
 |---|---|---|---|---|---|
 | `0x01` | `RESET_DEFAULT` | Write | None | ⚠️ Framing confirmed, not wire-verified | [device-actions.md](./device-actions.md) |
 | `0x03` | `FACTORY_RESET` | Write | None | ⚠️ Framing confirmed, not wire-verified | [device-actions.md](./device-actions.md) |
+| `0x09` | Game mode | Write + echoed on notify | 1B: `0x01` on / `0x02` off | ✅ Confirmed | [device-settings.md](./device-settings.md#game-mode-0x09) |
+| `0x10` | Sleep mode | Write | 1B: `0x01` on / `0x02` off | ✅ Confirmed | [device-settings.md](./device-settings.md#sleep-mode-0x10) |
+| `0x14` | Scheduled power-off | Write; read via `0xFE` request | 4B: `u16` LE minutes + 2 zero bytes; `0xFFFF` = disabled | ✅ Confirmed | [device-settings.md](./device-settings.md#scheduled-power-off-0x14) |
 | `0x16` | `BALANCE` | Write; read via state-sync blob | 1B: value (`0..=100`, `50` = centered) | ✅ Confirmed | [balance.md](./balance.md) |
 | `0x17` | `ANC_SETTING` | Write + echoed on notify | 3B: `mode`, `sub_scene`, `noise_value` | ✅ Confirmed | [anc.md](./anc.md) |
 | `0x18` | `PAIRNAME` | Write (rename); read via `0xFE` request | Length-prefixed UTF-8 name | ✅ Read confirmed; write framing only | [device-actions.md](./device-actions.md), [version.md](./version.md) |
+| `0x1D` | Notification volume | Write; read via `0xFE` request | 2B: level + status byte | ✅ Confirmed | [device-settings.md](./device-settings.md#notification-volume-0x1d) |
+| `0x1F` | Disconnect power-off | Write; read via `0xFE` request | 2B: `u16` LE minutes; `0xFFFF` = never | ✅ Confirmed | [device-settings.md](./device-settings.md#disconnect-power-off-0x1f) |
 | `0x22` | `MULTIEQ2` | Write; read via state-sync blob | 1B preset ID + 142B table | ✅ Confirmed, all 7 presets | [eq.md](./eq.md) |
 | `0x28` | `ANC_RESULT` | Notify only | 1B: `applied` (`0x01` = success) | ✅ Confirmed | [anc.md](./anc.md) |
+| `0x2C` | Wear detection | Write; read via `0xFE` request | 3B write / 4B read: `wear`, reserved, `anc_on_wear`(, status) | ✅ Confirmed | [device-settings.md](./device-settings.md#wear-detection-0x2c) |
+| `0xFE` | Parameter query (GET) | Write | 1B: target opcode | ✅ Confirmed | [device-settings.md](./device-settings.md#parameter-query-0xfe) |
 
 ## Legacy / Superseded
 

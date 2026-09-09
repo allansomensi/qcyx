@@ -27,6 +27,7 @@ All values marked ✅ **Confirmed** were validated against real wire traffic. Va
 | [version.md](./version.md) | Firmware version, device name, pairing name |
 | [eq.md](./eq.md) | Equalizer presets |
 | [device-actions.md](./device-actions.md) | Reset, factory reset, rename |
+| [device-settings.md](./device-settings.md) | Parameter query (`0xFE`), notification volume, power-off timers, wear detection, game/sleep mode |
 
 ### Reference
 

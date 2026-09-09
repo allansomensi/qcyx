@@ -1,10 +1,16 @@
 pub mod args;
 
-use args::{AncSceneArg, Cli, Commands, NoiseCancellingArg};
+use args::{AncSceneArg, Cli, Commands, NoiseCancellingArg, PowerOffArg, ToggleArg};
 use clap::Parser;
 use qcyx_core::command::{AncScene, NcLevel, NoiseCancellingMode, TransparencyMode};
+use qcyx_core::disconnect_power_off::DisconnectPowerOff;
 use qcyx_core::eq::EqPreset;
 use qcyx_core::error::CoreError;
+use qcyx_core::game_mode::GameMode;
+use qcyx_core::notification_volume::NotificationVolume;
+use qcyx_core::scheduled_power_off::ScheduledPowerOff;
+use qcyx_core::sleep_mode::SleepMode;
+use qcyx_core::wear_detection::WearDetection;
 use qcyx_i18n::fl;
 use std::io::Write;
 
@@ -58,6 +64,69 @@ pub async fn run() -> Result<(), CoreError> {
             println!("{}", fl!("cli-rename-done", name = name));
             Ok(())
         }
+        Commands::NotificationVolume { level } => {
+            let level = notification_volume_from_arg(level);
+            qcyx_core::client::set_notification_volume(level).await?;
+            println!("{}", fl!("cli-notification-volume-set"));
+            Ok(())
+        }
+        Commands::ScheduledPowerOff { value } => {
+            let value = match value {
+                PowerOffArg::Disabled => ScheduledPowerOff::Disabled,
+                PowerOffArg::Minutes(m) => ScheduledPowerOff::Minutes(m),
+            };
+            qcyx_core::client::set_scheduled_power_off(value).await?;
+            println!("{}", fl!("cli-scheduled-power-off-set"));
+            Ok(())
+        }
+        Commands::DisconnectPowerOff { value } => {
+            let value = match value {
+                PowerOffArg::Disabled => DisconnectPowerOff::Never,
+                PowerOffArg::Minutes(m) => DisconnectPowerOff::Minutes(m),
+            };
+            qcyx_core::client::set_disconnect_power_off(value).await?;
+            println!("{}", fl!("cli-disconnect-power-off-set"));
+            Ok(())
+        }
+        Commands::WearDetection {
+            enabled,
+            anc_on_wear,
+        } => {
+            qcyx_core::client::set_wear_detection(WearDetection {
+                wear_detection: enabled,
+                anc_on_wear,
+            })
+            .await?;
+            println!("{}", fl!("cli-wear-detection-set"));
+            Ok(())
+        }
+        Commands::GameMode { state } => {
+            let state = match state {
+                ToggleArg::On => GameMode::On,
+                ToggleArg::Off => GameMode::Off,
+            };
+            qcyx_core::client::set_game_mode(state).await?;
+            println!("{}", fl!("cli-game-mode-set"));
+            Ok(())
+        }
+        Commands::SleepMode { state } => {
+            let state = match state {
+                ToggleArg::On => SleepMode::On,
+                ToggleArg::Off => SleepMode::Off,
+            };
+            qcyx_core::client::set_sleep_mode(state).await?;
+            println!("{}", fl!("cli-sleep-mode-set"));
+            Ok(())
+        }
+    }
+}
+
+fn notification_volume_from_arg(arg: args::NotificationVolumeArg) -> NotificationVolume {
+    match arg {
+        args::NotificationVolumeArg::Low => NotificationVolume::Low,
+        args::NotificationVolumeArg::Medium => NotificationVolume::Medium,
+        args::NotificationVolumeArg::High => NotificationVolume::High,
+        args::NotificationVolumeArg::Max => NotificationVolume::Max,
     }
 }
 

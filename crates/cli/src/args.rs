@@ -38,6 +38,77 @@ pub enum Commands {
     },
     /// Renames the device's Bluetooth pairing name
     Rename { name: String },
+    /// Sets the notification volume
+    NotificationVolume {
+        #[arg(value_enum)]
+        level: NotificationVolumeArg,
+    },
+    /// Sets the scheduled power-off timer (minutes, or "off" to disable)
+    ScheduledPowerOff {
+        /// Minutes until power-off, or "off" to disable
+        value: PowerOffArg,
+    },
+    /// Sets the power-off-after-disconnect timer (minutes, or "never")
+    DisconnectPowerOff {
+        /// Minutes after disconnect until power-off, or "never"
+        value: PowerOffArg,
+    },
+    /// Sets in-ear wear detection and its ANC-on-wear sub-toggle
+    WearDetection {
+        #[arg(long)]
+        enabled: bool,
+        /// Re-applies the last ANC scene when the earbuds are put back in.
+        /// Takes an explicit value, e.g. `--anc-on-wear=false`.
+        #[arg(long, default_value_t = true)]
+        anc_on_wear: bool,
+    },
+    /// Toggles game (low-latency) mode
+    GameMode {
+        #[arg(value_enum)]
+        state: ToggleArg,
+    },
+    /// Toggles sleep mode
+    SleepMode {
+        #[arg(value_enum)]
+        state: ToggleArg,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum NotificationVolumeArg {
+    Low,
+    Medium,
+    High,
+    Max,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum ToggleArg {
+    On,
+    Off,
+}
+
+/// A power-off timer value: a number of minutes, or a disabling keyword
+/// (`off`/`never` — both accepted, since the two timers use different words
+/// for it in the official app).
+#[derive(Clone, Copy, Debug)]
+pub enum PowerOffArg {
+    Disabled,
+    Minutes(u16),
+}
+
+impl std::str::FromStr for PowerOffArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "off" | "never" | "disabled" => Ok(PowerOffArg::Disabled),
+            _ => s
+                .parse::<u16>()
+                .map(PowerOffArg::Minutes)
+                .map_err(|_| format!("'{s}' is not a number of minutes or 'off'")),
+        }
+    }
 }
 
 /// The three top-level ANC modes. `Transparency` and `NoiseCancelling` each
