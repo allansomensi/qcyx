@@ -9,6 +9,7 @@ error-bluetooth-adapter = Could not find a suitable Bluetooth adapter.
 error-device-not-found = No QCY devices found. Make sure they are out of the case.
 error-service-not-found = QCY GATT service not found on device.
 error-connection-dropped = Connected, then the device immediately dropped the link. This usually means it isn't BLE-paired with Windows yet — go to Settings > Bluetooth & devices and pair it there (this is separate from the audio pairing you already did), then try again.
+error-operation-timeout = The Bluetooth stack stopped responding, so the operation was abandoned. Reconnect and try again.
 
 cli-anc-set = ANC scene set — mode: {$mode}, sub-scene: {$sub_scene}, noise value: {$noise_value}
 cli-anc-unconfirmed = ANC command sent, but the device did not confirm it — it may not have applied.

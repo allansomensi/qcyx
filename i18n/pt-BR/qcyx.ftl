@@ -9,6 +9,7 @@ error-bluetooth-adapter = Não foi possível encontrar um adaptador Bluetooth co
 error-device-not-found = Nenhum dispositivo QCY encontrado. Certifique-se de que estão fora da case.
 error-service-not-found = Serviço GATT QCY não encontrado no dispositivo.
 error-connection-dropped = Conectou, mas o dispositivo derrubou o link logo em seguida. Isso geralmente significa que ele ainda não está pareado via BLE com o Windows — vá em Configurações > Bluetooth e dispositivos e pareie por lá (isso é separado do pareamento de áudio que você já fez), depois tente de novo.
+error-operation-timeout = A pilha Bluetooth parou de responder e a operação foi abandonada. Reconecte e tente de novo.
 
 cli-anc-set = Cenário de ANC definido — modo: {$mode}, sub-cenário: {$sub_scene}, valor de ruído: {$noise_value}
 cli-anc-unconfirmed = Comando de ANC enviado, mas o dispositivo não confirmou — pode não ter sido aplicado.
@@ -41,6 +42,7 @@ waiting-subtitle = Certifique-se de que seus fones estão por perto e fora da ca
 connected-header = Conectado
 error-title = Erro de Conexão
 error-unknown = Erro desconhecido
+error-operation-timeout = The Bluetooth stack stopped responding, so the operation was abandoned. Reconnect and try again.
 
 gui-anc-title = Controle de Ruído
 gui-anc-normal = Normal

@@ -9,4 +9,5 @@ pub mod error;
 pub mod protocol;
 pub mod response;
 pub mod session;
+pub mod timeout;
 pub mod version;

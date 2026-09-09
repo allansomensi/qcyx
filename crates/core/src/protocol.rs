@@ -1,5 +1,12 @@
 use crate::error::CoreError;
 
+/// Largest parameter payload a single command can carry.
+///
+/// The frame prefixes a one-byte body length covering the opcode, the parameter
+/// length byte, and the parameters themselves — so anything past 253 parameter
+/// bytes overflows that byte.
+pub const MAX_PARAMETERS: usize = 253;
+
 /// A single command in the QCY `0xFF`-framed binary protocol.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Command {
@@ -12,8 +19,24 @@ impl Command {
         Self { opcode, parameters }
     }
 
+    /// Rejects a command that cannot be framed.
+    ///
+    /// [`Self::pack`] narrows the body length to a `u8`. Without this check a
+    /// 255-byte payload wraps to a body length of `1` and goes to the wire as a
+    /// malformed frame — accepted by the transport, misread by the device, with
+    /// no error surfaced anywhere.
+    pub fn validate(&self) -> Result<(), CoreError> {
+        if self.parameters.len() > MAX_PARAMETERS {
+            return Err(CoreError::FrameTooLarge(self.parameters.len()));
+        }
+        Ok(())
+    }
+
     /// Packs the command into the QCY wire frame:
     /// `[0xFF, BodyLength, Opcode, ParamLength, Params...]`.
+    ///
+    /// Call [`Self::validate`] first; packing an oversized command truncates
+    /// the length byte.
     pub fn pack(&self) -> Vec<u8> {
         let mut body = vec![self.opcode, self.parameters.len() as u8];
         body.extend(&self.parameters);
@@ -89,5 +112,25 @@ mod tests {
     #[test]
     fn rejects_body_length_mismatch() {
         assert!(Command::parse(&[0xFF, 0x09, 0x17, 0x03, 0x02, 0x00, 0x00]).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_the_largest_framable_payload() {
+        let cmd = Command::new(0x22, vec![0x00; MAX_PARAMETERS]);
+        assert!(cmd.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_an_unframable_payload() {
+        let cmd = Command::new(0x22, vec![0x00; MAX_PARAMETERS + 1]);
+        assert!(matches!(cmd.validate(), Err(CoreError::FrameTooLarge(254))));
+    }
+
+    #[test]
+    fn eq_sized_payload_is_framable() {
+        // 1 preset byte + the 142-byte filter table.
+        let cmd = Command::new(0x22, vec![0x00; 143]);
+        assert!(cmd.validate().is_ok());
+        assert_eq!(cmd.pack()[1] as usize, 145);
     }
 }

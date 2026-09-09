@@ -5,16 +5,36 @@ use qcyx_core::session;
 use std::time::Duration;
 use tokio::time;
 
+/// First delay after a connection attempt finds nothing.
+const RECONNECT_BACKOFF_MIN: Duration = Duration::from_secs(1);
+
+/// Ceiling on the retry delay.
+const RECONNECT_BACKOFF_MAX: Duration = Duration::from_secs(30);
+
 /// Actively attempts to establish the shared, persistent BLE session.
+///
+/// Retries with exponential backoff. The scan now resolves as soon as an
+/// advertisement arrives instead of always burning five seconds, so an
+/// unthrottled retry loop would hammer the adapter continuously — degrading BLE
+/// for the whole system — while the earbuds sit in their case.
 pub fn connect_poll() -> impl futures::Stream<Item = Message> {
     iced::stream::channel(1, |mut output: Sender<Message>| async move {
+        let mut backoff = RECONNECT_BACKOFF_MIN;
+
         loop {
             match session::ensure_connected().await {
                 Ok(info) => {
                     let _ = output.send(Message::Connected(info)).await;
                     break;
                 }
-                Err(CoreError::DeviceNotFound) => continue,
+                // Retryable: the device simply isn't advertising yet, or the
+                // stack was briefly unresponsive.
+                Err(CoreError::DeviceNotFound | CoreError::OperationTimeout(_)) => {
+                    time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(RECONNECT_BACKOFF_MAX);
+                }
+                // Terminal: no adapter at all, or something the user has to fix
+                // (BLE pairing on Windows). Retrying only hides the message.
                 Err(e) => {
                     let _ = output.send(Message::ConnectionError(e.to_string())).await;
                     break;

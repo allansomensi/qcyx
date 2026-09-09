@@ -23,4 +23,16 @@ pub enum CoreError {
 
     #[error("{}", fl!("error-connection-dropped"))]
     ConnectionDropped,
+
+    /// A call into the platform BLE stack exceeded its budget.
+    ///
+    /// Carries the operation label so a hang is attributable to the call that
+    /// caused it. See [`crate::timeout`].
+    #[error("{}", fl!("error-operation-timeout"))]
+    OperationTimeout(&'static str),
+
+    /// A command carries more parameter bytes than the frame's one-byte body
+    /// length can express. See [`crate::protocol::MAX_PARAMETERS`].
+    #[error("Frame too large: {0} parameter bytes (protocol limit is 253)")]
+    FrameTooLarge(usize),
 }

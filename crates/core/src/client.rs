@@ -1,5 +1,9 @@
 //! High-level BLE orchestration for ANC control: device discovery,
 //! connection, and command flow.
+//!
+//! Every call into `btleplug` runs under a [`crate::timeout`] budget. The
+//! platform stacks can leave a GATT call pending forever when a link dies
+//! uncleanly, and a hang here strands the shared session for the whole process.
 
 use crate::balance;
 use crate::battery::BatteryStatus;
@@ -12,18 +16,24 @@ use crate::eq::EqPreset;
 use crate::error::CoreError;
 use crate::protocol::Command;
 use crate::response::{self, Event};
+use crate::timeout::{budget, guard};
 use crate::version::FirmwareVersion;
 use btleplug::api::{
-    Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
+    Central, CentralEvent, CharPropFlags, Characteristic, Manager as _, Peripheral as _,
+    ScanFilter, WriteType,
 };
-use btleplug::platform::{Manager, Peripheral};
-use futures::stream::StreamExt;
+use btleplug::platform::{Adapter, Manager, Peripheral};
+use futures::stream::{FuturesUnordered, StreamExt};
 use qcyx_i18n::fl;
 use std::time::Duration;
 use tokio::time;
 
-/// How long to scan for QCY advertisements.
-const SCAN_DURATION: Duration = Duration::from_secs(5);
+/// Ceiling on how long to wait for a QCY advertisement.
+///
+/// The scan resolves as soon as a matching advertisement arrives, so this is an
+/// upper bound rather than a fixed cost — the old fixed 5s sleep was paid in
+/// full even when the device answered on the first advertisement.
+const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// How long to wait for the asynchronous `ANC_RESULT` confirmation.
 const ANC_CONFIRM_TIMEOUT: Duration = Duration::from_secs(10);
@@ -34,30 +44,157 @@ const CONNECT_RETRIES: u32 = 3;
 /// Retries for service/characteristic discovery.
 const DISCOVERY_RETRIES: u32 = 3;
 
-/// Scans nearby BLE advertisements for the QCY manufacturer Company ID.
-async fn find_qcy_device() -> Result<Peripheral, CoreError> {
-    let manager = Manager::new().await?;
-    let adapters = manager.adapters().await?;
-    let central = adapters
-        .into_iter()
-        .next()
-        .ok_or(CoreError::AdapterNotFound)?;
+/// Window over which a fresh link must stay up before it is trusted.
+///
+/// WinRT can report `connect()` as `Ok` and tear the link down a moment later.
+const CONNECT_SETTLE: Duration = Duration::from_millis(400);
 
-    central.start_scan(ScanFilter::default()).await?;
-    time::sleep(SCAN_DURATION).await;
-    central.stop_scan().await?;
+/// Liveness poll interval inside [`CONNECT_SETTLE`].
+const CONNECT_SETTLE_POLL: Duration = Duration::from_millis(50);
 
-    for peripheral in central.peripherals().await? {
-        let Some(properties) = peripheral.properties().await? else {
-            continue;
-        };
+/// Flush margin after a `WriteWithoutResponse`, which carries no ATT ack.
+const WRITE_FLUSH: Duration = Duration::from_millis(60);
 
-        if properties.manufacturer_data.contains_key(&QCY_COMPANY_ID) {
-            return Ok(peripheral);
+/// Flush margin before a deliberate disconnect, so queued writes leave the stack.
+const DISCONNECT_FLUSH: Duration = Duration::from_millis(250);
+
+/// Settle margin after subscribing, before the first command may be written.
+const SUBSCRIBE_SETTLE: Duration = Duration::from_millis(150);
+
+/// Largest payload guaranteed to fit an ATT write at the default 23-byte MTU.
+const DEFAULT_ATT_PAYLOAD: usize = 20;
+
+/// Returns `true` when the peripheral advertises the QCY Company ID.
+async fn is_qcy(peripheral: &Peripheral) -> bool {
+    matches!(
+        peripheral.properties().await,
+        Ok(Some(properties)) if properties.manufacturer_data.contains_key(&QCY_COMPANY_ID)
+    )
+}
+
+/// Checks peripherals the platform already knows about, before scanning.
+///
+/// A device paired in the OS is usually cached by both WinRT and BlueZ, which
+/// makes the whole scan avoidable on the common path.
+async fn cached_qcy_peripheral(adapter: &Adapter) -> Result<Option<Peripheral>, CoreError> {
+    let peripherals = guard(budget::SCAN_CONTROL, "peripherals", async {
+        Ok(adapter.peripherals().await?)
+    })
+    .await?;
+
+    for peripheral in peripherals {
+        if is_qcy(&peripheral).await {
+            return Ok(Some(peripheral));
         }
     }
 
-    Err(CoreError::DeviceNotFound)
+    Ok(None)
+}
+
+/// Looks for a QCY device on one adapter: cache first, then an event-driven scan.
+///
+/// The scan consumes [`CentralEvent`]s and resolves on the first advertisement
+/// carrying the QCY Company ID. The caller is responsible for stopping the scan
+/// — see [`find_qcy_device`], which does so for every adapter unconditionally.
+async fn find_on_adapter(adapter: &Adapter) -> Result<Option<Peripheral>, CoreError> {
+    if let Some(peripheral) = cached_qcy_peripheral(adapter).await? {
+        return Ok(Some(peripheral));
+    }
+
+    let mut events = guard(budget::SCAN_CONTROL, "events", async {
+        Ok(adapter.events().await?)
+    })
+    .await?;
+
+    guard(budget::SCAN_CONTROL, "start_scan", async {
+        adapter.start_scan(ScanFilter::default()).await?;
+        Ok(())
+    })
+    .await?;
+
+    // `ScanFilter::default()` is deliberate: QCY advertises no service UUID, so
+    // a service-filtered scan finds nothing on BlueZ.
+    let found = time::timeout(SCAN_TIMEOUT, async {
+        while let Some(event) = events.next().await {
+            let id = match event {
+                CentralEvent::DeviceDiscovered(id)
+                | CentralEvent::DeviceUpdated(id)
+                | CentralEvent::ManufacturerDataAdvertisement { id, .. } => id,
+                _ => continue,
+            };
+
+            let Ok(peripheral) = adapter.peripheral(&id).await else {
+                continue;
+            };
+
+            if is_qcy(&peripheral).await {
+                return Some(peripheral);
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten();
+
+    Ok(found)
+}
+
+/// Finds a QCY peripheral, searching every adapter the platform reports.
+///
+/// Machines with both an internal radio and a USB dongle enumerate adapters in
+/// a non-deterministic order, so taking the first one made the app work or not
+/// depending on the boot. Adapters are searched concurrently and the first
+/// match wins; a failing adapter is logged, not propagated.
+async fn find_qcy_device() -> Result<Peripheral, CoreError> {
+    let manager = Manager::new().await?;
+    let adapters = guard(budget::SCAN_CONTROL, "adapters", async {
+        Ok(manager.adapters().await?)
+    })
+    .await?;
+
+    if adapters.is_empty() {
+        return Err(CoreError::AdapterNotFound);
+    }
+
+    let outcome = {
+        let mut searches: FuturesUnordered<_> = adapters
+            .iter()
+            .map(|adapter| async move {
+                let label = adapter
+                    .adapter_info()
+                    .await
+                    .unwrap_or_else(|_| "unknown adapter".to_string());
+                (label, find_on_adapter(adapter).await)
+            })
+            .collect();
+
+        let mut result = Err(CoreError::DeviceNotFound);
+
+        while let Some((label, search)) = searches.next().await {
+            match search {
+                Ok(Some(peripheral)) => {
+                    tracing::info!(adapter = %label, "QCY device found");
+                    result = Ok(peripheral);
+                    break;
+                }
+                Ok(None) => tracing::debug!(adapter = %label, "no QCY advertisement seen"),
+                Err(e) => tracing::warn!(adapter = %label, error = %e, "adapter unusable"),
+            }
+        }
+
+        result
+    };
+
+    // Unconditional, on every path: an adapter left in active discovery drains
+    // power and degrades BLE for the whole system, and blocks the connect that
+    // follows on BlueZ. Cancelled searches never get to clean up after
+    // themselves, so cleanup lives here.
+    for adapter in &adapters {
+        let _ = adapter.stop_scan().await;
+    }
+
+    outcome
 }
 
 /// The outcomes an ANC write can produce.
@@ -92,18 +229,54 @@ pub struct DeviceHandle {
 }
 
 impl DeviceHandle {
-    async fn send(&self, cmd: Command) -> Result<(), CoreError> {
-        self.peripheral
-            .write(&self.write_char, &cmd.pack(), self.write_type)
-            .await?;
+    /// Picks the write type for a payload of `payload_len` bytes.
+    ///
+    /// `WriteWithoutResponse` has no long-write path: if the MTU was never
+    /// raised above the 23-byte default, anything past 20 bytes of payload is
+    /// truncated silently. Oversized frames — the 145-byte EQ table — therefore
+    /// go out `WithResponse`, which the stack is allowed to split.
+    fn write_type_for(&self, payload_len: usize) -> WriteType {
+        if payload_len > DEFAULT_ATT_PAYLOAD {
+            WriteType::WithResponse
+        } else {
+            self.write_type
+        }
+    }
 
-        time::sleep(Duration::from_millis(300)).await;
+    async fn send(&self, cmd: Command) -> Result<(), CoreError> {
+        cmd.validate()?;
+
+        let payload = cmd.pack();
+        let write_type = self.write_type_for(payload.len());
+
+        guard(budget::GATT_OP, "write", async {
+            self.peripheral
+                .write(&self.write_char, &payload, write_type)
+                .await?;
+            Ok(())
+        })
+        .await?;
+
+        // `WithResponse` is acknowledged at the ATT layer, so there is nothing
+        // left to wait for. `WithoutResponse` is not: a short margin keeps the
+        // packet from being dropped by a disconnect that follows immediately.
+        // The larger margin a deliberate teardown needs lives in `finish`, not
+        // on every write — the persistent GUI session never disconnects, and
+        // was paying it on every slider commit.
+        if matches!(write_type, WriteType::WithoutResponse) {
+            time::sleep(WRITE_FLUSH).await;
+        }
+
         Ok(())
     }
 
     /// Sends an ANC-setting write and waits for confirmation.
     pub async fn send_anc_and_confirm(&self, cmd: Command) -> Result<AncConfirmation, CoreError> {
-        let mut notifications = self.peripheral.notifications().await?;
+        let mut notifications = guard(budget::GATT_OP, "notifications", async {
+            Ok(self.peripheral.notifications().await?)
+        })
+        .await?;
+
         self.send(cmd).await?;
 
         let deadline = time::Instant::now() + ANC_CONFIRM_TIMEOUT;
@@ -123,8 +296,14 @@ impl DeviceHandle {
                     break;
                 }
                 Err(_elapsed) => {
-                    let connected = self.peripheral.is_connected().await;
+                    let connected = self.is_connected().await;
                     tracing::trace!(connected = ?connected, "waiting for ANC confirmation");
+
+                    // A link that died mid-wait will never deliver the result;
+                    // burning the rest of the budget only delays the report.
+                    if matches!(connected, Ok(false)) {
+                        return Err(CoreError::ConnectionDropped);
+                    }
                     continue;
                 }
             };
@@ -163,13 +342,19 @@ impl DeviceHandle {
 
     /// Disconnects from the device.
     pub async fn disconnect(&self) -> Result<(), CoreError> {
-        self.peripheral.disconnect().await?;
-        Ok(())
+        guard(budget::GATT_OP, "disconnect", async {
+            self.peripheral.disconnect().await?;
+            Ok(())
+        })
+        .await
     }
 
     /// Checks if the BLE link is active.
     pub async fn is_connected(&self) -> Result<bool, CoreError> {
-        Ok(self.peripheral.is_connected().await?)
+        guard(budget::GATT_OP, "is_connected", async {
+            Ok(self.peripheral.is_connected().await?)
+        })
+        .await
     }
 
     /// Reads current battery status.
@@ -179,14 +364,22 @@ impl DeviceHandle {
             .as_ref()
             .ok_or_else(|| CoreError::CharacteristicNotFound("battery (00000008)".into()))?;
 
-        let data = self.peripheral.read(battery_char).await?;
+        let data = guard(budget::GATT_OP, "read_battery", async {
+            Ok(self.peripheral.read(battery_char).await?)
+        })
+        .await?;
+
         BatteryStatus::parse(&data)
             .ok_or_else(|| CoreError::InvalidPacket("battery payload shorter than 3 bytes".into()))
     }
 
     /// Reads device settings via a direct GATT read on the notify characteristic.
     pub async fn read_state_sync(&self) -> Result<StateSync, CoreError> {
-        let data = self.peripheral.read(&self.notify_char).await?;
+        let data = guard(budget::GATT_OP, "read_state_sync", async {
+            Ok(self.peripheral.read(&self.notify_char).await?)
+        })
+        .await?;
+
         let commands = Command::parse(&data)?;
 
         let mut state = StateSync::default();
@@ -217,7 +410,11 @@ impl DeviceHandle {
             .as_ref()
             .ok_or_else(|| CoreError::CharacteristicNotFound("version (00000007)".into()))?;
 
-        let data = self.peripheral.read(version_char).await?;
+        let data = guard(budget::GATT_OP, "read_version", async {
+            Ok(self.peripheral.read(version_char).await?)
+        })
+        .await?;
+
         FirmwareVersion::parse(&data)
             .ok_or_else(|| CoreError::InvalidPacket("version payload was empty".into()))
     }
@@ -250,7 +447,7 @@ impl DeviceHandle {
 
 /// Connects to the device, discovers services, and sets up notifications.
 pub async fn connect() -> Result<DeviceHandle, CoreError> {
-    println!("{}", fl!("core-connecting"));
+    tracing::info!("{}", fl!("core-connecting"));
     let peripheral = find_qcy_device().await?;
 
     if let Err(e) = connect_with_retry(&peripheral).await {
@@ -268,12 +465,16 @@ pub async fn connect() -> Result<DeviceHandle, CoreError> {
                 .and_then(|p| p.local_name);
 
             match &device_name {
-                Some(name) => println!("{}", fl!("core-connected-named", name = name.clone())),
-                None => println!("{}", fl!("core-connected")),
+                Some(name) => {
+                    tracing::info!("{}", fl!("core-connected-named", name = name.clone()))
+                }
+                None => tracing::info!("{}", fl!("core-connected")),
             }
-            println!("{}", fl!("core-subscribed"));
+            tracing::info!("{}", fl!("core-subscribed"));
 
-            time::sleep(Duration::from_millis(150)).await;
+            // CCCD writes are acknowledged before the firmware is necessarily
+            // ready to emit on them; the first command must not race that.
+            time::sleep(SUBSCRIBE_SETTLE).await;
 
             Ok(DeviceHandle {
                 peripheral,
@@ -305,20 +506,50 @@ async fn connect_with_retry(peripheral: &Peripheral) -> Result<(), CoreError> {
             time::sleep(Duration::from_millis(500 * u64::from(attempt))).await;
         }
 
-        match peripheral.connect().await {
-            Ok(()) => {
-                time::sleep(Duration::from_millis(400)).await;
-                match peripheral.is_connected().await {
-                    Ok(true) => return Ok(()),
-                    Ok(false) => last_err = Some(CoreError::ConnectionDropped),
-                    Err(e) => last_err = Some(CoreError::from(e)),
-                }
-            }
-            Err(e) => last_err = Some(CoreError::from(e)),
+        let connected = guard(budget::CONNECT, "connect", async {
+            peripheral.connect().await?;
+            Ok(())
+        })
+        .await;
+
+        if let Err(e) = connected {
+            last_err = Some(e);
+            continue;
+        }
+
+        match settle_link(peripheral).await {
+            Ok(true) => return Ok(()),
+            Ok(false) => last_err = Some(CoreError::ConnectionDropped),
+            Err(e) => last_err = Some(e),
         }
     }
 
     Err(last_err.unwrap_or(CoreError::ConnectionDropped))
+}
+
+/// Holds a fresh link under observation for [`CONNECT_SETTLE`].
+///
+/// The window itself is the Windows workaround and is kept in full on the happy
+/// path. Polling it rather than sleeping through it means a link that drops at
+/// 50ms starts its retry immediately instead of after the whole window.
+async fn settle_link(peripheral: &Peripheral) -> Result<bool, CoreError> {
+    let deadline = time::Instant::now() + CONNECT_SETTLE;
+
+    loop {
+        time::sleep(CONNECT_SETTLE_POLL).await;
+
+        let alive = guard(budget::GATT_OP, "is_connected", async {
+            Ok(peripheral.is_connected().await?)
+        })
+        .await?;
+
+        if !alive {
+            return Ok(false);
+        }
+        if time::Instant::now() >= deadline {
+            return Ok(true);
+        }
+    }
 }
 
 /// Discovers characteristics, filtering strictly by `SERVICE_UUID`.
@@ -336,7 +567,13 @@ async fn discover_characteristics_with_retry(
             time::sleep(Duration::from_millis(500 * u64::from(attempt))).await;
         }
 
-        match peripheral.discover_services().await {
+        let discovered = guard(budget::DISCOVERY, "discover_services", async {
+            peripheral.discover_services().await?;
+            Ok(())
+        })
+        .await;
+
+        match discovered {
             Ok(()) => {
                 if peripheral.services().iter().any(|s| s.uuid == SERVICE_UUID) {
                     let chars: Vec<Characteristic> = peripheral
@@ -350,7 +587,7 @@ async fn discover_characteristics_with_retry(
                 }
                 last_err = Some(CoreError::ServiceNotFound);
             }
-            Err(e) => last_err = Some(CoreError::from(e)),
+            Err(e) => last_err = Some(e),
         }
     }
 
@@ -400,7 +637,11 @@ async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError>
     };
 
     let _ = peripheral.unsubscribe(&notify_char).await;
-    peripheral.subscribe(&notify_char).await?;
+    guard(budget::GATT_OP, "subscribe_notify", async {
+        peripheral.subscribe(&notify_char).await?;
+        Ok(())
+    })
+    .await?;
 
     for characteristic in &chars {
         if characteristic.uuid == NOTIFY_UUID {
@@ -411,7 +652,14 @@ async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError>
         }
 
         let _ = peripheral.unsubscribe(characteristic).await;
-        if let Err(e) = peripheral.subscribe(characteristic).await {
+
+        let subscribed = guard(budget::GATT_OP, "subscribe_secondary", async {
+            peripheral.subscribe(characteristic).await?;
+            Ok(())
+        })
+        .await;
+
+        if let Err(e) = subscribed {
             tracing::debug!(uuid = %characteristic.uuid, error = %e, "failed to subscribe to secondary notify characteristic");
         }
     }
@@ -427,10 +675,17 @@ async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError>
 
 /// Executes a block and guarantees disconnection afterwards.
 async fn finish<T>(handle: DeviceHandle, result: Result<T, CoreError>) -> Result<T, CoreError> {
-    let disconnect_result = handle.disconnect().await;
-    let value = result?;
-    disconnect_result?;
-    Ok(value)
+    // The margin every `WriteWithoutResponse` used to pay, charged once, here,
+    // where it is actually needed: the stack must flush before the teardown.
+    time::sleep(DISCONNECT_FLUSH).await;
+
+    // A failed disconnect is operational noise, never the command's verdict.
+    // Returning it told the user a write had failed after it had applied.
+    if let Err(e) = handle.disconnect().await {
+        tracing::warn!(error = %e, "disconnect failed after command");
+    }
+
+    result
 }
 
 fn print_anc_confirmation(confirmation: AncConfirmation, mode: u8, sub_scene: u8, noise_value: u8) {
