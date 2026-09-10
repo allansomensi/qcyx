@@ -51,6 +51,15 @@ pub async fn run() -> Result<(), CoreError> {
             println!("{}", fl!("cli-eq-set"));
             Ok(())
         }
+        Commands::EqCustom { bands } => {
+            // clap's `num_args = 10` already guarantees the exact count.
+            let gains: [i16; qcyx_core::eq::CUSTOM_BAND_COUNT] = bands
+                .try_into()
+                .expect("clap num_args = 10 guarantees exactly 10 values");
+            qcyx_core::client::set_eq_custom(gains).await?;
+            println!("{}", fl!("cli-eq-custom-set"));
+            Ok(())
+        }
         Commands::ResetDefault => {
             qcyx_core::client::reset_default().await?;
             println!("{}", fl!("cli-reset-default-done"));

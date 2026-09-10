@@ -1,9 +1,9 @@
 use crate::app::App;
 use crate::message::Message;
-use crate::view::components::{badge, card};
-use iced::widget::{button, column, container, row, text};
+use crate::view::components::card;
+use iced::widget::{button, column, container, row, slider, text};
 use iced::{Alignment, Element, Length, Theme};
-use qcyx_core::eq::EqPreset;
+use qcyx_core::eq::{CUSTOM_BAND_FREQS_HZ, CUSTOM_GAIN_MAX_DB, CUSTOM_GAIN_MIN_DB, EqPreset};
 use qcyx_i18n::fl;
 
 const PRESETS: [EqPreset; 7] = [
@@ -63,17 +63,30 @@ pub fn view(app: &App) -> Element<'_, Message> {
     );
 
     let custom_note = card::panel(
-        row![
-            column![
-                text(fl!("eq-custom-title")).size(14),
-                text(fl!("eq-custom-desc")).size(11).style(text::secondary),
+        column![
+            row![
+                column![
+                    text(fl!("eq-custom-title")).size(14),
+                    text(fl!("eq-custom-desc")).size(11).style(text::secondary),
+                ]
+                .spacing(2)
+                .width(Length::Fill),
+                button(text(fl!("eq-custom-reset")).size(12))
+                    .padding([6, 12])
+                    .on_press(Message::EqCustomReset),
             ]
-            .spacing(2)
-            .width(Length::Fill),
-            badge::coming_soon(fl!("badge-coming-soon")),
+            .spacing(10)
+            .align_y(Alignment::Center),
+            column(
+                CUSTOM_BAND_FREQS_HZ
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &freq)| band_row(app, i, freq))
+                    .collect::<Vec<_>>()
+            )
+            .spacing(10),
         ]
-        .spacing(10)
-        .align_y(Alignment::Center),
+        .spacing(14),
     );
 
     let status_text = app.eq_status.clone().unwrap_or_else(|| fl!("eq-hint"));
@@ -128,4 +141,43 @@ fn preset_chip(app: &App, preset: EqPreset) -> Element<'_, Message> {
         })
         .on_press(Message::SetEqPreset(preset))
         .into()
+}
+
+/// One custom-EQ band: frequency label, gain slider, and the current
+/// gain readout. `band` is the index into [`CUSTOM_BAND_FREQS_HZ`] /
+/// `app.eq_custom_bands` (0 = 31 Hz .. 9 = 16 kHz).
+fn band_row(app: &App, band: usize, freq_hz: u16) -> Element<'_, Message> {
+    let value = app.eq_custom_bands[band];
+
+    row![
+        container(text(freq_label(freq_hz)).size(12).style(text::secondary)).width(46),
+        slider(CUSTOM_GAIN_MIN_DB..=CUSTOM_GAIN_MAX_DB, value, move |v| {
+            Message::EqCustomBandChanged(band, v)
+        })
+        .on_release(Message::EqCustomBandCommit(band, value))
+        .step(1i16)
+        .width(Length::Fill),
+        container(text(gain_label(value)).size(12).style(text::secondary)).width(40),
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+/// Formats a band's center frequency the way the device's own app does:
+/// whole kHz above 1000 Hz ("2k", "16k"), plain Hz below it ("31", "500").
+fn freq_label(freq_hz: u16) -> String {
+    if freq_hz >= 1000 {
+        format!("{}k", freq_hz / 1000)
+    } else {
+        freq_hz.to_string()
+    }
+}
+
+/// Formats a gain in dB with an explicit sign, e.g. "+3", "-8", "0".
+fn gain_label(gain_db: i16) -> String {
+    match gain_db.cmp(&0) {
+        std::cmp::Ordering::Greater => format!("+{gain_db}"),
+        _ => gain_db.to_string(),
+    }
 }

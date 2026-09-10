@@ -291,6 +291,11 @@ pub async fn set_eq_preset(preset: EqPreset) -> Result<(), CoreError> {
     with_session!(handle => handle.set_eq_preset(preset).await)
 }
 
+/// Applies a custom (per-band) equalizer curve over the shared connection.
+pub async fn set_eq_custom(gains_db: [i16; crate::eq::CUSTOM_BAND_COUNT]) -> Result<(), CoreError> {
+    with_session!(handle => handle.set_eq_custom(gains_db).await)
+}
+
 /// Returns `true` if the shared connection is open and the underlying BLE link is alive.
 pub async fn is_connected() -> bool {
     let mut slot = shared_slot().lock().await;

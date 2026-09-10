@@ -37,9 +37,12 @@ pub struct App {
     pub pending_scene: Option<AncScene>,
     /// Local value for the Transparency ambient-sound slider.
     pub transparency_level: u8,
-    /// Optimistically set equalizer preset.
+    /// Optimistically set equalizer preset. `None` while a custom curve is
+    /// active (no built-in preset chip should be highlighted).
     pub eq_preset: Option<EqPreset>,
     pub eq_status: Option<String>,
+    /// Custom (per-band) equalizer gains in dB, [`qcyx_core::eq::CUSTOM_BAND_FREQS_HZ`] order.
+    pub eq_custom_bands: [i16; qcyx_core::eq::CUSTOM_BAND_COUNT],
     /// Channel balance (`0..=100`, `50` = centered).
     pub balance: u8,
     /// Text input for device renaming.
@@ -101,6 +104,7 @@ impl Default for App {
             transparency_level: 1,
             eq_preset: None,
             eq_status: None,
+            eq_custom_bands: [0; qcyx_core::eq::CUSTOM_BAND_COUNT],
             balance: 50,
             rename_input: String::new(),
             rename_status: None,

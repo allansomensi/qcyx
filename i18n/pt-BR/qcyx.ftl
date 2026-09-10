@@ -31,6 +31,8 @@ cli-balance-set = Equilíbrio do canal definido para {$value} (0 = todo à esque
 
 cli-eq-set = Predefinição de equalizador aplicada.
 
+cli-eq-custom-set = Curva personalizada de equalizador aplicada.
+
 cli-reset-default-done = Configurações redefinidas para o padrão.
 cli-factory-reset-confirm = Isso vai apagar todas as configurações do dispositivo e não pode ser desfeito. Continuar?
 cli-factory-reset-cancelled = Restauração de fábrica cancelada.
@@ -138,7 +140,10 @@ eq-preset-classic = Clássico
 eq-preset-applied = Predefinição do equalizador aplicada.
 eq-preset-error = Falha ao definir a predefinição do equalizador: {$error}
 eq-custom-title = Personalizar
-eq-custom-desc = A edição por banda ainda não é suportada — o formato do EQ personalizado do dispositivo ainda não foi totalmente reverso-engenheirado.
+eq-custom-desc = Edição por banda, de 31 Hz a 16 kHz, -8 a 8 dB.
+eq-custom-reset = Redefinir
+eq-custom-applied = Curva personalizada de equalizador aplicada.
+eq-custom-error = Falha ao definir a curva personalizada de equalizador: {$error}
 
 # Settings tab
 settings-title = Configurações

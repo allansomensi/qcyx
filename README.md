@@ -41,7 +41,7 @@ Configuration of QCY earbuds is officially restricted to the proprietary mobile 
 - ✅ **Dual Device Connection:** Connect to two devices at once.
 - ✅ **Device Management:** Read firmware version, rename the device, reset to default, and factory reset.
 - ✅ **Multi-language Support:** UI available in English and Portuguese (pt-BR).
-- 🚧 **Custom EQ:** Per-band editing.
+- ✅ **Custom EQ:** Per-band editing.
 - 🚧 **Find my earbuds:** Trigger a high-frequency sound to locate misplaced earbuds.
 - 🚧 **Firmware update:** Flash official firmware updates over the air (OTA).
 
@@ -119,6 +119,9 @@ qcyx-cli eq bass-boost
 qcyx-cli eq rock
 qcyx-cli eq soft
 qcyx-cli eq classic
+
+# Custom equalizer curve (10 bands, dB, -8 to 8, 31 Hz to 16 kHz)
+qcyx-cli eq-custom 3 2 0 0 -2 -2 0 1 2 3
 
 # Notification volume
 qcyx-cli notification-volume low

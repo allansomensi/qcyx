@@ -285,6 +285,56 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::EqCustomBandChanged(band, value) => {
+            if let Some(slot) = app.eq_custom_bands.get_mut(band) {
+                *slot = value;
+            }
+            Task::none()
+        }
+        Message::EqCustomBandCommit(band, value) => {
+            if let Some(slot) = app.eq_custom_bands.get_mut(band) {
+                *slot = value;
+            }
+            // A custom edit deselects any built-in preset chip — the device
+            // is no longer on one of the 7 named curves.
+            app.eq_preset = None;
+            app.eq_status = None;
+            let bands = app.eq_custom_bands;
+            Task::perform(
+                async move {
+                    session::set_eq_custom(bands)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                Message::EqCustomResult,
+            )
+        }
+        Message::EqCustomReset => {
+            app.eq_custom_bands = [0; qcyx_core::eq::CUSTOM_BAND_COUNT];
+            app.eq_preset = None;
+            app.eq_status = None;
+            Task::perform(
+                async move {
+                    session::set_eq_custom([0; qcyx_core::eq::CUSTOM_BAND_COUNT])
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                Message::EqCustomResult,
+            )
+        }
+        Message::EqCustomResult(result) => {
+            match result {
+                Ok(()) => {
+                    info!("Custom EQ applied");
+                    app.eq_status = Some(fl!("eq-custom-applied"));
+                }
+                Err(e) => {
+                    error!("Failed to set custom EQ: {e}");
+                    app.eq_status = Some(fl!("eq-custom-error", error = e));
+                }
+            }
+            Task::none()
+        }
         Message::WearDetectionToggled(enabled) => {
             // Preserves the ANC-on-wear sub-flag, which this toggle doesn't
             // expose — defaults to on, matching the device's own

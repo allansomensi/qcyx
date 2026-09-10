@@ -1,9 +1,5 @@
 # Equalizer
 
-All 7 named presets confirmed.
-
----
-
 ## Opcode
 
 | Opcode | Name | Direction | Status |
@@ -41,15 +37,43 @@ Spatial Audio and Default share a byte-for-byte identical table — Spatial Audi
 
 ## The 142-Byte Table
 
-Not understood at the byte level, and not safe to hand-edit. A single per-band edit changes dozens of bytes at once, not a handful near one offset — consistent with packed filter coefficients (frequency/Q/gain or biquad sets) recomputed across the whole table, not a simple per-band gain array.
+### Built-in presets
+
+Packed filter coefficients (frequency/Q/gain or biquad sets), not a simple per-band gain array — not safe to hand-edit. `qcyx_core::eq::EqPreset` covers the 7 built-in presets as fixed `'static` tables.
 
 - Resetting inside custom mode snaps the table back to the previously-active preset's bytes, but keeps the ID tag `0x80`.
 - **No confirmation** — unlike ANC, no echo or result notification follows a `0x22` write (fire-and-forget, same as [balance](./balance.md)).
 
-`qcyx_core::eq::EqPreset` only covers the 7 built-in presets, replaying their captured bytes exactly. Custom per-band editing is not implemented — reconstructing the coefficient encoding would need much more isolated, targeted data.
+### Custom (per-band) curve
+
+The moment any band is edited, the table switches to a distinct, simpler per-band record format — not an extension of the preset-coefficient encoding above.
+
+10 fixed-size records (7 bytes each, 70 bytes total), one per band, in ascending frequency order:
+
+```
+[0x00, marker, freq_lo, freq_hi, gain_lo, gain_hi, 0x64]
+```
+
+| Field | Size | Notes |
+|---|---|---|
+| `0x00` | 1 | constant |
+| `marker` | 1 | `0x00` for band 0 (31 Hz, low-shelf); `0xFF` for every other band (peaking/high-shelf). Constant per band, independent of gain. |
+| `freq_lo/freq_hi` | 2 | center frequency in Hz, little-endian `u16` |
+| `gain_lo/gain_hi` | 2 | `gain_db * 100`, little-endian **signed** `i16` |
+| `0x64` | 1 | constant (100), independent of gain |
+
+Band order / center frequencies: `31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000` Hz.
+
+Gain range: `-8..=8` dB (`qcyx_core::eq::CUSTOM_GAIN_MIN_DB`/`MAX_DB`).
+
+Bytes past the 10th record (offset 71..142 of the table) are left zeroed by `qcyx_core::eq::set_custom`. The device does not require anything specific there.
 
 ---
 
 ## Implementation
 
-`EqPreset` is a Rust enum, one variant per preset, each carrying its ID and full table as `'static` constants. `qcyx_core::eq::set_preset` concatenates ID + table and writes it. `DeviceHandle::set_eq_preset` sends and returns immediately (no confirmation to await).
+`EqPreset` is a Rust enum, one variant per built-in preset, each carrying its ID and full table as `'static` constants. `qcyx_core::eq::set_preset` concatenates ID + table and writes it. `qcyx_core::eq::set_custom` builds the 10-record custom table from a `[i16; 10]` of per-band gains. Both go through `DeviceHandle::set_eq_preset` / `set_eq_custom`, which send and return immediately — no confirmation to await.
+
+### Write type
+
+This command (`opcode` + `param_len` + ID + table, up to 147 bytes total) must be sent as `WriteWithoutResponse`, after the ATT MTU has been negotiated above its default (23 bytes) — the characteristic does not reliably accept `WriteRequest` for a payload this size. `DeviceHandle::write_type_for` checks the peripheral's actual negotiated MTU (`Peripheral::mtu()`) rather than the unnegotiated default floor before picking the write type.

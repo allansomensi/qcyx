@@ -75,8 +75,9 @@ const DISCONNECT_FLUSH: Duration = Duration::from_millis(250);
 /// Settle margin after subscribing, before the first command may be written.
 const SUBSCRIBE_SETTLE: Duration = Duration::from_millis(150);
 
-/// Largest payload guaranteed to fit an ATT write at the default 23-byte MTU.
-const DEFAULT_ATT_PAYLOAD: usize = 20;
+/// ATT header every write PDU pays (1-byte opcode + 2-byte handle), on top
+/// of the negotiated MTU, regardless of `WriteType`.
+const ATT_WRITE_HEADER: u16 = 3;
 
 /// Returns `true` when the peripheral advertises the QCY Company ID.
 async fn is_qcy(peripheral: &Peripheral) -> bool {
@@ -246,12 +247,19 @@ pub struct DeviceHandle {
 impl DeviceHandle {
     /// Picks the write type for a payload of `payload_len` bytes.
     ///
-    /// `WriteWithoutResponse` has no long-write path: if the MTU was never
-    /// raised above the 23-byte default, anything past 20 bytes of payload is
-    /// truncated silently. Oversized frames — the 145-byte EQ table — therefore
-    /// go out `WithResponse`, which the stack is allowed to split.
+    /// `WriteWithoutResponse` has no long-write path: if the payload doesn't
+    /// fit inside the peripheral's *currently negotiated* MTU, it is
+    /// truncated silently rather than split. The EQ preset command is 145
+    /// bytes and the characteristic does not reliably accept `WriteRequest`
+    /// for it, so this must go out as `WriteWithoutResponse` against an
+    /// actually-negotiated MTU rather than the unnegotiated 20-byte default
+    /// — `btleplug` negotiates that MTU per-platform after service discovery
+    /// without the app asking (BlueZ, WinRT and CoreBluetooth all update
+    /// `Peripheral::mtu()` on their own), so checking the real value here is
+    /// enough.
     fn write_type_for(&self, payload_len: usize) -> WriteType {
-        if payload_len > DEFAULT_ATT_PAYLOAD {
+        let usable_mtu = self.peripheral.mtu().saturating_sub(ATT_WRITE_HEADER) as usize;
+        if payload_len > usable_mtu {
             WriteType::WithResponse
         } else {
             self.write_type
@@ -655,6 +663,16 @@ impl DeviceHandle {
     pub async fn set_eq_preset(&self, preset: EqPreset) -> Result<(), CoreError> {
         self.send(crate::eq::set_preset(preset)).await
     }
+
+    /// Applies a custom (per-band) equalizer curve. `gains_db` is in
+    /// [`crate::eq::CUSTOM_BAND_FREQS_HZ`] order (31 Hz .. 16 kHz), each
+    /// clamped to [`crate::eq::CUSTOM_GAIN_MIN_DB`]..=[`crate::eq::CUSTOM_GAIN_MAX_DB`].
+    pub async fn set_eq_custom(
+        &self,
+        gains_db: [i16; crate::eq::CUSTOM_BAND_COUNT],
+    ) -> Result<(), CoreError> {
+        self.send(crate::eq::set_custom(gains_db)).await
+    }
 }
 
 /// Connects to the device, discovers services, and sets up notifications.
@@ -998,6 +1016,13 @@ pub async fn set_name(name: &str) -> Result<(), CoreError> {
 pub async fn set_eq_preset(preset: EqPreset) -> Result<(), CoreError> {
     let handle = connect().await?;
     let result = handle.set_eq_preset(preset).await;
+    finish(handle, result).await
+}
+
+/// Connects, applies a custom (per-band) equalizer curve, and disconnects.
+pub async fn set_eq_custom(gains_db: [i16; crate::eq::CUSTOM_BAND_COUNT]) -> Result<(), CoreError> {
+    let handle = connect().await?;
+    let result = handle.set_eq_custom(gains_db).await;
     finish(handle, result).await
 }
 

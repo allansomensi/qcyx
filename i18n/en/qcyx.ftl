@@ -31,6 +31,8 @@ cli-balance-set = Channel balance set to {$value} (0 = full left, 100 = full rig
 
 cli-eq-set = Equalizer preset applied.
 
+cli-eq-custom-set = Custom equalizer curve applied.
+
 cli-reset-default-done = Settings reset to default.
 cli-factory-reset-confirm = This will erase all settings on the device and cannot be undone. Continue?
 cli-factory-reset-cancelled = Factory reset cancelled.
@@ -138,7 +140,10 @@ eq-preset-classic = Classic
 eq-preset-applied = Equalizer preset applied.
 eq-preset-error = Failed to set equalizer preset: {$error}
 eq-custom-title = Custom
-eq-custom-desc = Per-band editing isn't supported yet — the device's custom EQ format hasn't been fully reverse-engineered.
+eq-custom-desc = Per-band editing, 31 Hz to 16 kHz, -8 to 8 dB.
+eq-custom-reset = Reset
+eq-custom-applied = Custom equalizer curve applied.
+eq-custom-error = Failed to set custom equalizer curve: {$error}
 
 # Settings tab
 settings-title = Settings

@@ -1,7 +1,7 @@
 //! Equalizer presets, written to characteristic `00001001` (opcode `0x22`, `0xFF`-framed).
 //!
-//! Confirmed by direct capture: selecting a built-in preset sends the entire
-//! 142-byte band/filter table over the wire, tagged with a 1-byte preset ID.
+//! Selecting a built-in preset sends the entire 142-byte band/filter table
+//! over the wire, tagged with a 1-byte preset ID.
 
 use crate::protocol::Command;
 
@@ -59,7 +59,67 @@ pub fn set_preset(preset: EqPreset) -> Command {
     Command::new(OPCODE, parameters)
 }
 
-/// The captured 142-byte tables.
+/// Number of bands in the custom (per-band) equalizer.
+pub const CUSTOM_BAND_COUNT: usize = 10;
+
+/// Center frequency (Hz) of each custom band, lowest to highest — also the
+/// order [`set_custom`] expects its `gains_db` argument in.
+pub const CUSTOM_BAND_FREQS_HZ: [u16; CUSTOM_BAND_COUNT] =
+    [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+/// Gain range accepted by the device for a custom band, in dB.
+pub const CUSTOM_GAIN_MIN_DB: i16 = -8;
+pub const CUSTOM_GAIN_MAX_DB: i16 = 8;
+
+/// Builds the custom (per-band) equalizer write command from 10 band gains,
+/// in [`CUSTOM_BAND_FREQS_HZ`] order (31 Hz .. 16 kHz).
+///
+/// As soon as any band slider is touched, the device switches the table
+/// from the packed preset-coefficient encoding to a much simpler per-band
+/// record format — 10 records of 7 bytes each, followed by zero padding to
+/// fill the fixed 142-byte table:
+///
+/// ```text
+/// [0x00, marker, freq_lo, freq_hi, gain_lo, gain_hi, 0x64]
+/// ```
+///
+/// - `marker` is `0x00` for band 0 (31 Hz, low-shelf) and `0xFF` for every
+///   other band (peaking/high-shelf) — constant, independent of gain.
+/// - `freq_lo/freq_hi` is the band's center frequency in Hz, little-endian `u16`.
+/// - `gain_lo/gain_hi` is `gain_db * 100`, little-endian **signed** `i16`.
+/// - the trailing byte is always `0x64` (100), constant regardless of gain.
+///
+/// Bytes past the 10th record are left zeroed; the device does not require
+/// anything specific there.
+pub fn set_custom(gains_db: [i16; CUSTOM_BAND_COUNT]) -> Command {
+    let mut table = [0u8; 142];
+
+    for (i, &gain) in gains_db.iter().enumerate() {
+        let gain = gain.clamp(CUSTOM_GAIN_MIN_DB, CUSTOM_GAIN_MAX_DB);
+        let off = i * 7;
+
+        table[off] = 0x00;
+        table[off + 1] = if i == 0 { 0x00 } else { 0xFF };
+
+        let freq_bytes = CUSTOM_BAND_FREQS_HZ[i].to_le_bytes();
+        table[off + 2] = freq_bytes[0];
+        table[off + 3] = freq_bytes[1];
+
+        let gain_bytes = (gain * 100).to_le_bytes();
+        table[off + 4] = gain_bytes[0];
+        table[off + 5] = gain_bytes[1];
+
+        table[off + 6] = 0x64;
+    }
+    // table[70..142] stays zeroed — see doc comment above.
+
+    let mut parameters = Vec::with_capacity(1 + table.len());
+    parameters.push(CUSTOM_PRESET_ID);
+    parameters.extend_from_slice(&table);
+    Command::new(OPCODE, parameters)
+}
+
+/// The 7 built-in filter tables.
 mod table {
     pub const SPATIAL: [u8; 142] = [
         0x00, 0x00, 0x1e, 0x00, 0x00, 0x00, 0x46, 0x00, 0x04, 0xdc, 0x00, 0xe0, 0xfc, 0x64, 0x00,
@@ -158,7 +218,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn set_preset_matches_capture_for_every_preset() {
+    fn set_preset_frames_match_the_built_in_tables() {
         for preset in [
             EqPreset::Spatial,
             EqPreset::Default,
@@ -200,5 +260,52 @@ mod tests {
         for id in ids {
             assert_ne!(id, CUSTOM_PRESET_ID);
         }
+    }
+
+    #[test]
+    fn set_custom_encodes_a_positive_band_gain() {
+        // bands 1-9 at 0 dB, band 10 (16 kHz) at 6 dB.
+        let mut gains = [0i16; CUSTOM_BAND_COUNT];
+        gains[9] = 6;
+        let cmd = set_custom(gains);
+
+        assert_eq!(cmd.parameters[0], CUSTOM_PRESET_ID);
+        assert_eq!(cmd.parameters.len(), 143);
+
+        let band10 = &cmd.parameters[1 + 9 * 7..1 + 9 * 7 + 7];
+        assert_eq!(band10, &[0x00, 0xFF, 0x80, 0x3e, 0x58, 0x02, 0x64]);
+    }
+
+    #[test]
+    fn set_custom_encodes_a_negative_band_gain() {
+        // band 10 at -8 dB -> 0xFCE0 (-800) little-endian.
+        let mut gains = [0i16; CUSTOM_BAND_COUNT];
+        gains[9] = -8;
+        let cmd = set_custom(gains);
+
+        let band10 = &cmd.parameters[1 + 9 * 7..1 + 9 * 7 + 7];
+        assert_eq!(band10, &[0x00, 0xFF, 0x80, 0x3e, 0xe0, 0xfc, 0x64]);
+    }
+
+    #[test]
+    fn set_custom_band_zero_uses_the_low_shelf_marker() {
+        let cmd = set_custom([0; CUSTOM_BAND_COUNT]);
+        let band0 = &cmd.parameters[1..1 + 7];
+        // marker (index 1) is 0x00 only for band 0; freq is 31 Hz (0x001f LE).
+        assert_eq!(band0, &[0x00, 0x00, 0x1f, 0x00, 0x00, 0x00, 0x64]);
+    }
+
+    #[test]
+    fn set_custom_clamps_out_of_range_gains() {
+        let cmd = set_custom([100; CUSTOM_BAND_COUNT]);
+        let band0 = &cmd.parameters[1..1 + 7];
+        let gain = i16::from_le_bytes([band0[4], band0[5]]);
+        assert_eq!(gain, CUSTOM_GAIN_MAX_DB * 100);
+    }
+
+    #[test]
+    fn set_custom_frames_to_147_bytes_total() {
+        let cmd = set_custom([0; CUSTOM_BAND_COUNT]);
+        assert_eq!(cmd.pack().len(), 147);
     }
 }

@@ -56,6 +56,13 @@ pub enum Message {
     /// Request equalizer preset.
     SetEqPreset(EqPreset),
     EqPresetResult(EqPreset, Result<(), String>),
+    /// Local custom-EQ band gain change (slider drag), by band index (0-9).
+    EqCustomBandChanged(usize, i16),
+    /// Commit a custom-EQ band gain (BLE write of the full 10-band curve).
+    EqCustomBandCommit(usize, i16),
+    /// Reset all custom-EQ bands to 0 dB (BLE write of a flat curve).
+    EqCustomReset,
+    EqCustomResult(Result<(), String>),
     /// In-ear detection toggle flipped (preserves the ANC-on-wear sub-flag).
     WearDetectionToggled(bool),
     WearDetectionResult(WearDetection, Result<(), String>),

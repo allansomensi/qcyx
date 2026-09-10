@@ -28,6 +28,18 @@ pub enum Commands {
         #[arg(value_enum)]
         preset: EqPresetArg,
     },
+    /// Sets a custom 10-band equalizer curve
+    EqCustom {
+        /// Gains in dB (-8 to 8), one per band, in order:
+        /// 31 62 125 250 500 1k 2k 4k 8k 16k Hz
+        #[arg(
+            num_args = 10,
+            allow_hyphen_values = true,
+            value_name = "DB",
+            value_parser = clap::value_parser!(i16).range(-8..=8)
+        )]
+        bands: Vec<i16>,
+    },
     /// Resets settings to default
     ResetDefault,
     /// Factory-resets the device
