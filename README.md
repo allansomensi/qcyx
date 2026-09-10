@@ -16,6 +16,14 @@
 
 ---
 
+## 🎥 Demo
+
+https://github.com/user-attachments/assets/689b53db-4163-4052-8d04-0ff213b6dbb7
+
+*A quick look at switching EQ presets and adjusting ANC — all from the desktop, no mobile app required.*
+
+---
+
 ## 🎯 Motivation
 
 Configuration of QCY earbuds is officially restricted to the proprietary mobile application. Desktop operating systems currently lack a native client, requiring users to perform a Bluetooth handoff to a mobile device simply to modify device parameters.
