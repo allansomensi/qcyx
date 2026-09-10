@@ -30,47 +30,12 @@ pub fn view(_app: &App) -> Element<'_, Message> {
         .spacing(6),
     );
 
-    let stack_section = card::panel(
-        column![
-            text(fl!("about-stack-title")).size(13),
-            text(fl!("about-stack-note"))
-                .size(12)
-                .style(text::secondary),
-        ]
-        .spacing(8),
-    );
-
-    let protocol_note = card::panel(
-        column![
-            text(fl!("about-protocol-title")).size(13),
-            text(fl!("about-protocol-note"))
-                .size(12)
-                .style(text::secondary),
-        ]
-        .spacing(8),
-    );
-
     let firmware_note = card::panel(
         column![
             text(fl!("about-firmware-title")).size(13),
             text(fl!("about-firmware-note"))
                 .size(12)
                 .style(text::secondary),
-        ]
-        .spacing(8),
-    );
-
-    let devices_section = card::panel(
-        column![
-            text(fl!("about-devices-title")).size(13),
-            column![
-                device_row("MeloBuds Pro", fl!("about-device-status-validated")),
-                device_row("MeloBuds N70", fl!("about-device-status-planned")),
-                device_row("MeloBuds N60", fl!("about-device-status-planned")),
-                device_row("MeloBuds N50", fl!("about-device-status-planned")),
-                device_row("MeloBuds A30", fl!("about-device-status-planned")),
-            ]
-            .spacing(4),
         ]
         .spacing(8),
     );
@@ -103,9 +68,6 @@ pub fn view(_app: &App) -> Element<'_, Message> {
     column![
         header,
         description,
-        stack_section,
-        devices_section,
-        protocol_note,
         firmware_note,
         disclaimer,
         support_section,
@@ -119,14 +81,6 @@ fn info_row(label: String, value: &'static str) -> Element<'static, Message> {
     row![
         text(label).size(12).style(text::secondary).width(140),
         text(value).size(12),
-    ]
-    .into()
-}
-
-fn device_row(name: &'static str, status: String) -> Element<'static, Message> {
-    row![
-        text(name).size(12).width(Length::Fill),
-        text(status).size(12).style(text::secondary),
     ]
     .into()
 }
