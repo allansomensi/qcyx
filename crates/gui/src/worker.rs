@@ -57,6 +57,19 @@ pub fn battery_poll() -> impl futures::Stream<Item = Message> {
     })
 }
 
+/// Periodically re-reads the BLE signal strength (RSSI).
+pub fn rssi_poll() -> impl futures::Stream<Item = Message> {
+    iced::stream::channel(1, |mut output: Sender<Message>| async move {
+        loop {
+            let result = session::read_rssi().await.map_err(|e| e.to_string());
+            if output.send(Message::RssiResult(result)).await.is_err() {
+                break;
+            }
+            time::sleep(Duration::from_secs(10)).await;
+        }
+    })
+}
+
 /// Periodically checks that the persistent connection is still alive.
 pub fn watch_disconnect() -> impl futures::Stream<Item = Message> {
     iced::stream::channel(1, |mut output: Sender<Message>| async move {

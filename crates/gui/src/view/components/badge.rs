@@ -8,6 +8,12 @@ pub enum Tone {
     Warning,
     Danger,
     Neutral,
+    /// The app's primary/accent color — for things that should stand out
+    /// as a deliberate highlight (e.g. "a profile is active") rather than
+    /// a status dot. [`Neutral`](Tone::Neutral) is intentionally muted
+    /// and blends into panel borders by design, so it's the wrong choice
+    /// whenever the badge itself needs to draw the eye.
+    Accent,
 }
 
 impl Tone {
@@ -18,6 +24,7 @@ impl Tone {
             Tone::Warning => ext.primary.strong.color,
             Tone::Danger => ext.danger.strong.color,
             Tone::Neutral => ext.background.strong.color,
+            Tone::Accent => ext.primary.strong.color,
         }
     }
 }

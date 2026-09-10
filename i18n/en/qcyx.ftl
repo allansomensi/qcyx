@@ -74,12 +74,15 @@ app-subtitle = QCY earbuds controller
 nav-home = Home
 nav-anc = Noise Control
 nav-equalizer = Equalizer
+nav-profiles = Profiles
 nav-settings = Settings
 nav-about = About
 theme-label = Theme
+language-label = Language
 badge-connecting = Connecting
 badge-connected = Connected
 badge-error = Error
+sidebar-active-profile = Profile: {$name}
 
 # Shared
 badge-coming-soon = Coming soon
@@ -151,6 +154,8 @@ settings-subtitle = Preferences and device information.
 settings-device-name-label = Device name
 settings-device-name-placeholder = QCY HT08
 settings-save-button = Save
+settings-edit-button = Edit
+settings-cancel-button = Cancel
 settings-rename-done = Device renamed — the new name will show up after reconnecting.
 settings-rename-error = Failed to rename device: {$error}
 settings-inear-toggle-label = In-ear detection
@@ -205,7 +210,7 @@ settings-disconnect-poweroff-error = Failed to set disconnect power-off: {$error
 settings-minutes-format = {$minutes} min
 settings-firmware-section-title = Firmware
 settings-firmware-version-label = Installed version
-settings-firmware-check-button = Check for updates
+settings-firmware-readonly-note = QCYx only reads the firmware version — it never writes firmware to the device. Flashing OTA updates from an unofficial, reverse-engineered client is too risky (a failed write can brick the earbuds), so that capability isn't part of this app.
 settings-reset-default-desc = Resets all settings on the device to their default values.
 settings-reset-default-button = Reset to default
 settings-reset-default-done = Settings reset to default.
@@ -220,6 +225,61 @@ settings-factory-reset-error = Factory reset failed: {$error}
 # About tab
 about-description = QCYx is an unofficial, open-source tool for controlling QCY Bluetooth earbuds over BLE/GATT, built from reverse-engineering the protocol.
 about-repo-label = Repository
+about-author-label = Author
 about-license-label = License
+about-issues-label = Report an issue
 about-protocol-title = About the protocol
 about-protocol-note = The protocol was mapped by directly capturing BLE traffic from the official app. Only capture-confirmed commands are implemented; the rest of this interface is already in place, waiting on protocol confirmation.
+about-stack-title = Built with
+about-stack-note = Rust, from end to end: iced for the desktop GUI, btleplug for cross-platform BLE, and Clap for the CLI. Fully open source, MIT-licensed.
+about-firmware-title = Firmware updates
+about-firmware-note = QCYx only ever reads the installed firmware version — it never writes firmware to the device. Flashing OTA updates from an unofficial, reverse-engineered client is too risky for a third-party tool to take on, so that capability is intentionally not part of QCYx.
+about-devices-title = Supported devices
+about-device-status-validated = Validated
+about-device-status-planned = Planned
+about-disclaimer-title = Disclaimer
+about-disclaimer-note = QCYx is an independent, community project with no affiliation to QCY. It was built entirely from observed Bluetooth traffic, without access to QCY's source code. Use it at your own discretion.
+about-support-title = Support & feedback
+about-support-note = Found a bug or have a feature request? Issues and pull requests are welcome on the repository above.
+
+# Signal strength
+signal-tooltip-title = Bluetooth signal strength
+signal-tooltip-value = {$rssi} dBm — the closer to 0, the stronger the connection.
+signal-tooltip-unknown = Signal strength unavailable on this platform/adapter.
+
+# Profiles
+profiles-title = Profiles
+profiles-subtitle = Apply a full set of settings in one action, save your own, or import/export them as JSON.
+profiles-built-in-title = Built-in
+profiles-custom-title = Your profiles
+profiles-empty = No saved profiles yet — configure the device the way you like it, then save it below.
+profiles-save-current-title = Save current settings as a profile
+profiles-name-placeholder = Profile name
+profiles-save-button = Save profile
+profiles-apply-button = Apply
+profiles-active-label = Active
+profiles-deactivate-button = Deactivate
+profiles-export-button = Export
+profiles-delete-button = Delete
+profiles-import-button = Import
+profiles-applied = Profile applied.
+profiles-apply-error = Failed to apply profile: {$error}
+profiles-saved = Profile "{$name}" saved.
+profiles-export-done = Profile exported.
+profiles-export-error = Failed to export profile: {$error}
+profiles-import-done = Profile "{$name}" imported.
+profiles-import-error = Failed to import profile: {$error}
+
+built-in-focus = Focus
+built-in-calls = Calls
+built-in-workout = Workout
+built-in-gaming = Gaming
+
+# EQ profiles (Equalizer tab)
+eq-profiles-title = EQ profiles
+eq-profiles-empty = No saved EQ profiles yet.
+eq-profiles-save-button = Save EQ
+eq-profiles-applied = EQ profile applied.
+eq-profiles-apply-error = Failed to apply EQ profile: {$error}
+eq-profiles-saved = EQ profile "{$name}" saved.
+eq-profiles-import-done = EQ profile "{$name}" imported.

@@ -221,6 +221,11 @@ pub async fn read_battery() -> Result<BatteryStatus, CoreError> {
     with_session!(handle => handle.read_battery().await)
 }
 
+/// Reads the live BLE signal strength (RSSI) over the shared connection.
+pub async fn read_rssi() -> Result<Option<i16>, CoreError> {
+    with_session!(handle => handle.read_rssi().await)
+}
+
 /// Sends a balance write over the shared connection.
 pub async fn set_balance(value: u8) -> Result<(), CoreError> {
     with_session!(handle => handle.set_balance(value).await)

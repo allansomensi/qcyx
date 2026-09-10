@@ -2,6 +2,7 @@
 //! Written to characteristic `00001001` (`0xFF`-framed).
 
 use crate::protocol::Command;
+use serde::{Deserialize, Serialize};
 
 /// Opcodes used by the ANC control flow.
 pub mod opcode {
@@ -13,7 +14,7 @@ pub mod opcode {
 }
 
 /// A three-level intensity setting used by several [`NoiseCancellingMode`] variants.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NcLevel {
     One,
     Two,
@@ -40,7 +41,7 @@ impl NcLevel {
 }
 
 /// The "Noise Cancelling" submenu modes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NoiseCancellingMode {
     Adaptive,
     Indoor(NcLevel),
@@ -50,7 +51,7 @@ pub enum NoiseCancellingMode {
 }
 
 /// The "Transparency" submenu modes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransparencyMode {
     VocalEnhancement,
     /// Ambient sound passthrough. Valid `level` range is `1..=6`.
@@ -60,7 +61,7 @@ pub enum TransparencyMode {
 }
 
 /// ANC scenes on opcode `0x17` ([`opcode::ANC_SETTING`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AncScene {
     /// Plain listening, no ANC/transparency processing.
     Normal,

@@ -442,6 +442,20 @@ impl DeviceHandle {
             .ok_or_else(|| CoreError::InvalidPacket("version payload was empty".into()))
     }
 
+    /// Reads the live BLE signal strength (RSSI, in dBm) for the connected
+    /// peripheral, when the platform's BLE stack reports one. `Ok(None)`
+    /// (not an error) means the adapter simply didn't include it in the
+    /// advertisement/connection properties — this is common right after a
+    /// fresh connection on some platforms.
+    pub async fn read_rssi(&self) -> Result<Option<i16>, CoreError> {
+        let props = guard(budget::GATT_OP, "read_rssi", async {
+            Ok(self.peripheral.properties().await?)
+        })
+        .await?;
+
+        Ok(props.and_then(|p| p.rssi))
+    }
+
     /// Sends a balance-set write.
     pub async fn set_balance(&self, value: u8) -> Result<(), CoreError> {
         self.send(balance::set_balance(value)).await

@@ -4,6 +4,7 @@
 //! over the wire, tagged with a 1-byte preset ID.
 
 use crate::protocol::Command;
+use serde::{Deserialize, Serialize};
 
 /// Opcode for equalizer preset/table selection.
 pub const OPCODE: u8 = 0x22;
@@ -12,7 +13,7 @@ pub const OPCODE: u8 = 0x22;
 pub const CUSTOM_PRESET_ID: u8 = 0x80;
 
 /// A built-in equalizer preset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EqPreset {
     Spatial,
     Default,

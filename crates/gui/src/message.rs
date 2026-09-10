@@ -8,11 +8,23 @@ use qcyx_core::game_mode::GameMode;
 use qcyx_core::ldac::Ldac;
 use qcyx_core::multipoint::Multipoint;
 use qcyx_core::notification_volume::NotificationVolume;
+use qcyx_core::profile::Profile;
 use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::session::ConnectionInfo;
 use qcyx_core::sleep_mode::SleepMode;
 use qcyx_core::touch_action::{TouchAction, TouchControl};
 use qcyx_core::wear_detection::WearDetection;
+
+/// Which saved-profile library a [`Message`] profile variant targets: the
+/// full-device "Profiles" tab, or the Equalizer tab's EQ-only profiles.
+/// One shared set of messages/handlers serves both — they differ only in
+/// which list they read from/write to and, for `Full`, in also driving
+/// the sidebar's active-profile indicator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileScope {
+    Full,
+    Eq,
+}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -20,6 +32,8 @@ pub enum Message {
     Connected(ConnectionInfo),
     /// Result of a battery status read.
     BatteryResult(Result<BatteryStatus, String>),
+    /// Result of a BLE signal-strength (RSSI) read.
+    RssiResult(Result<Option<i16>, String>),
     /// The persistent connection was lost.
     Disconnected,
     /// Connection failed.
@@ -42,8 +56,12 @@ pub enum Message {
     BalanceResult(Result<(), String>),
     /// Rename input field changed.
     RenameInputChanged(String),
-    /// Submit device rename.
-    RenameSubmit,
+    /// Toggles the device-name field between disabled/display and
+    /// enabled/editable. Pressed while editing, this also submits.
+    RenameEditToggled,
+    /// Cancels an in-progress rename, discarding the typed input and
+    /// reverting the field to disabled/display mode.
+    RenameEditCancelled,
     RenameResult(Result<(), String>),
     /// Request reset to defaults (arms on first press, commits on second).
     ResetDefaultPressed,
@@ -94,4 +112,29 @@ pub enum Message {
     /// Request to assign a touch action to one earbud/click-count control.
     SetTouchAction(TouchControl, TouchAction),
     TouchActionResult(TouchControl, TouchAction, Result<(), String>),
+    /// Selected UI language (a Fluent language id, e.g. `"pt-BR"`).
+    LanguageSelected(String),
+
+    // --- Profiles (shared between the "Profiles" tab and the Equalizer
+    // tab's EQ-only profiles — see `ProfileScope`) ---
+    /// Apply a profile (built-in or saved) to the device.
+    ApplyProfile(ProfileScope, Profile),
+    ApplyProfileResult(ProfileScope, String, Result<(), String>),
+    /// The "new profile name" text field changed.
+    NewProfileNameChanged(ProfileScope, String),
+    /// Save the current live settings as a new profile under the typed name.
+    SaveCurrentAsProfile(ProfileScope),
+    /// Delete a saved (non-built-in) profile by name.
+    DeleteProfile(ProfileScope, String),
+    /// Export a profile to a JSON file via a native save dialog.
+    ExportProfile(ProfileScope, Profile),
+    ExportProfileResult(ProfileScope, Result<(), String>),
+    /// Import a profile from a JSON file via a native open dialog.
+    ImportProfile(ProfileScope),
+    ImportProfileResult(ProfileScope, Result<Profile, String>),
+    /// Clears the active-profile indicator without touching any device
+    /// setting — a profile is just a label for "these are the settings I
+    /// last applied together", not a device-side mode, so there's nothing
+    /// to undo on the device itself.
+    ClearActiveProfile,
 }

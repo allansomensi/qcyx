@@ -8,6 +8,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Tab::Home => tabs::home::view(app),
         Tab::Anc => tabs::anc::view(app),
         Tab::Equalizer => tabs::equalizer::view(app),
+        Tab::Profiles => tabs::profiles::view(app),
         Tab::Settings => tabs::settings::view(app),
         Tab::About => tabs::about::view(app),
     };

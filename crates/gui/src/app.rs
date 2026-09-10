@@ -12,6 +12,7 @@ use qcyx_core::game_mode::GameMode;
 use qcyx_core::ldac::Ldac;
 use qcyx_core::multipoint::Multipoint;
 use qcyx_core::notification_volume::NotificationVolume;
+use qcyx_core::profile::Profile;
 use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::sleep_mode::SleepMode;
 use qcyx_core::touch_action::TouchActionMap;
@@ -27,6 +28,9 @@ pub struct App {
     pub battery: Option<BatteryStatus>,
     /// Error from the most recent battery read attempt.
     pub battery_error: Option<String>,
+    /// Last successfully read BLE signal strength, in dBm. `None` until the
+    /// first read completes, or if the platform never reports one.
+    pub rssi: Option<i16>,
     /// The device's advertised BLE name.
     pub device_name: Option<String>,
     /// Firmware version read at connect time.
@@ -48,6 +52,10 @@ pub struct App {
     /// Text input for device renaming.
     pub rename_input: String,
     pub rename_status: Option<String>,
+    /// Whether the device-name field is unlocked for editing. Starts
+    /// (and returns to) `false`/disabled so the field reads as a display
+    /// value until the user explicitly asks to change it.
+    pub rename_editing: bool,
     /// Tracks confirmation state for reset to default.
     pub reset_default_armed: bool,
     pub reset_default_status: Option<String>,
@@ -86,6 +94,23 @@ pub struct App {
     pub touch_actions: Option<TouchActionMap>,
     pub touch_actions_status: Option<String>,
     pub status_log: Option<String>,
+    /// Current UI language (Fluent id, e.g. `"en"`, `"pt-BR"`).
+    pub language: String,
+    /// Name of the profile last successfully applied, shown as a small
+    /// indicator in the sidebar. Cleared on disconnect; not automatically
+    /// cleared by later manual tweaks (it marks "last applied", not "still
+    /// matches exactly").
+    pub active_profile: Option<String>,
+    /// User-saved full-device profiles, loaded from disk at startup.
+    pub profiles: Vec<Profile>,
+    pub profiles_status: Option<String>,
+    /// Text input for naming a new full-device profile.
+    pub new_profile_name: String,
+    /// User-saved EQ-only profiles, loaded from disk at startup.
+    pub eq_profiles: Vec<Profile>,
+    pub eq_profiles_status: Option<String>,
+    /// Text input for naming a new EQ-only profile.
+    pub new_eq_profile_name: String,
 }
 
 impl Default for App {
@@ -97,6 +122,7 @@ impl Default for App {
             error_log: None,
             battery: None,
             battery_error: None,
+            rssi: None,
             device_name: None,
             firmware_version: None,
             active_scene: None,
@@ -108,6 +134,7 @@ impl Default for App {
             balance: 50,
             rename_input: String::new(),
             rename_status: None,
+            rename_editing: false,
             reset_default_armed: false,
             reset_default_status: None,
             factory_reset_armed: false,
@@ -132,13 +159,50 @@ impl Default for App {
             touch_actions: None,
             touch_actions_status: None,
             status_log: None,
+            language: String::new(),
+            active_profile: None,
+            profiles: Vec::new(),
+            profiles_status: None,
+            new_profile_name: String::new(),
+            eq_profiles: Vec::new(),
+            eq_profiles_status: None,
+            new_eq_profile_name: String::new(),
         }
     }
 }
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
-        (Self::default(), Task::none())
+        let mut app = Self::default();
+
+        let settings = crate::store::load_settings();
+
+        if let Some(saved_theme) = settings.theme.as_deref()
+            && let Some(theme) = iced::Theme::ALL
+                .iter()
+                .find(|t| t.to_string() == saved_theme)
+        {
+            app.theme = theme.clone();
+        }
+
+        if let Some(language) = settings.language.as_deref() {
+            match qcyx_i18n::set_language(language) {
+                Ok(()) => app.language = language.to_string(),
+                Err(e) => {
+                    tracing::warn!(error = %e, language, "failed to apply saved language");
+                    app.language = qcyx_i18n::current_language();
+                }
+            }
+        } else {
+            // No saved preference yet: keep whatever `qcyx_i18n::localize()`
+            // picked from the system locale at startup.
+            app.language = qcyx_i18n::current_language();
+        }
+
+        app.profiles = crate::store::load_profiles();
+        app.eq_profiles = crate::store::load_eq_profiles();
+
+        (app, Task::none())
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -151,6 +215,7 @@ impl App {
             AppState::Connected => Subscription::batch([
                 Subscription::run(worker::watch_disconnect),
                 Subscription::run(worker::battery_poll),
+                Subscription::run(worker::rssi_poll),
             ]),
             AppState::Error => Subscription::none(),
         }

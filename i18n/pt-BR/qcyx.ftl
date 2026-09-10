@@ -74,12 +74,15 @@ app-subtitle = Controle para fones QCY
 nav-home = Início
 nav-anc = Cancelamento de Ruído
 nav-equalizer = Equalizador
+nav-profiles = Perfis
 nav-settings = Configurações
 nav-about = Sobre
 theme-label = Tema
+language-label = Idioma
 badge-connecting = Conectando
 badge-connected = Conectado
 badge-error = Erro
+sidebar-active-profile = Perfil: {$name}
 
 # Shared
 badge-coming-soon = Em breve
@@ -151,6 +154,8 @@ settings-subtitle = Preferências e informações do dispositivo.
 settings-device-name-label = Nome do dispositivo
 settings-device-name-placeholder = QCY HT08
 settings-save-button = Salvar
+settings-edit-button = Editar
+settings-cancel-button = Cancelar
 settings-rename-done = Dispositivo renomeado — o novo nome aparece depois de reconectar.
 settings-rename-error = Falha ao renomear o dispositivo: {$error}
 settings-inear-toggle-label = Detecção no ouvido
@@ -205,7 +210,7 @@ settings-disconnect-poweroff-error = Falha ao definir o desligamento por descone
 settings-minutes-format = {$minutes} min
 settings-firmware-section-title = Firmware
 settings-firmware-version-label = Versão instalada
-settings-firmware-check-button = Verificar atualizações
+settings-firmware-readonly-note = O QCYx apenas lê a versão do firmware — ele nunca grava firmware no dispositivo. Enviar atualizações OTA a partir de um cliente não oficial e desenvolvido por engenharia reversa é arriscado demais (uma gravação falha pode inutilizar os fones), então esse recurso não faz parte do app.
 settings-reset-default-desc = Redefine todas as configurações do dispositivo para os valores padrão.
 settings-reset-default-button = Redefinir para o padrão
 settings-reset-default-done = Configurações redefinidas para o padrão.
@@ -220,6 +225,61 @@ settings-factory-reset-error = Falha na restauração de fábrica: {$error}
 # About tab
 about-description = QCYx é uma ferramenta não oficial, de código aberto, para controlar fones de ouvido QCY Bluetooth via BLE/GATT, feita a partir de engenharia reversa do protocolo.
 about-repo-label = Repositório
+about-author-label = Autor
 about-license-label = Licença
+about-issues-label = Reportar um problema
 about-protocol-title = Sobre o protocolo
 about-protocol-note = O protocolo foi mapeado por captura direta de tráfego BLE do aplicativo oficial. Apenas os comandos confirmados na captura são implementados; o restante desta interface está pronto visualmente à espera da confirmação do protocolo.
+about-stack-title = Feito com
+about-stack-note = Rust do início ao fim: iced para a interface gráfica, btleplug para BLE multiplataforma e Clap para a CLI. Totalmente open source, sob licença MIT.
+about-firmware-title = Atualização de firmware
+about-firmware-note = O QCYx apenas lê a versão do firmware instalado — ele nunca grava firmware no dispositivo. Enviar atualizações OTA a partir de um cliente não oficial e desenvolvido por engenharia reversa é arriscado demais para uma ferramenta de terceiros assumir, então esse recurso não faz parte do QCYx de propósito.
+about-devices-title = Dispositivos suportados
+about-device-status-validated = Validado
+about-device-status-planned = Planejado
+about-disclaimer-title = Aviso
+about-disclaimer-note = O QCYx é um projeto independente da comunidade, sem qualquer vínculo com a QCY. Foi construído inteiramente a partir da observação do tráfego Bluetooth, sem acesso ao código-fonte da QCY. Use por sua conta e risco.
+about-support-title = Suporte e feedback
+about-support-note = Encontrou um bug ou tem uma sugestão? Issues e pull requests são bem-vindos no repositório acima.
+
+# Força do sinal
+signal-tooltip-title = Força do sinal Bluetooth
+signal-tooltip-value = {$rssi} dBm — quanto mais perto de 0, mais forte a conexão.
+signal-tooltip-unknown = Força do sinal indisponível nesta plataforma/adaptador.
+
+# Perfis
+profiles-title = Perfis
+profiles-subtitle = Aplique um conjunto completo de configurações de uma vez, salve os seus próprios perfis, ou importe/exporte como JSON.
+profiles-built-in-title = Predefinidos
+profiles-custom-title = Seus perfis
+profiles-empty = Nenhum perfil salvo ainda — configure o dispositivo do seu jeito e salve abaixo.
+profiles-save-current-title = Salvar configuração atual como perfil
+profiles-name-placeholder = Nome do perfil
+profiles-save-button = Salvar perfil
+profiles-apply-button = Aplicar
+profiles-active-label = Ativo
+profiles-deactivate-button = Desativar
+profiles-export-button = Exportar
+profiles-delete-button = Excluir
+profiles-import-button = Importar
+profiles-applied = Perfil aplicado.
+profiles-apply-error = Falha ao aplicar o perfil: {$error}
+profiles-saved = Perfil "{$name}" salvo.
+profiles-export-done = Perfil exportado.
+profiles-export-error = Falha ao exportar o perfil: {$error}
+profiles-import-done = Perfil "{$name}" importado.
+profiles-import-error = Falha ao importar o perfil: {$error}
+
+built-in-focus = Foco
+built-in-calls = Ligações
+built-in-workout = Treino
+built-in-gaming = Jogos
+
+# Perfis de EQ (aba Equalizador)
+eq-profiles-title = Perfis de EQ
+eq-profiles-empty = Nenhum perfil de EQ salvo ainda.
+eq-profiles-save-button = Salvar EQ
+eq-profiles-applied = Perfil de EQ aplicado.
+eq-profiles-apply-error = Falha ao aplicar o perfil de EQ: {$error}
+eq-profiles-saved = Perfil de EQ "{$name}" salvo.
+eq-profiles-import-done = Perfil de EQ "{$name}" importado.

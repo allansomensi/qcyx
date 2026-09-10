@@ -1,6 +1,6 @@
 use crate::app::App;
 use crate::message::Message;
-use crate::view::components::{badge, card};
+use crate::view::components::card;
 use iced::widget::{Space, button, column, pick_list, row, text, text_input, toggler};
 use iced::{Alignment, Border, Element, Length, Theme};
 use qcyx_core::disconnect_power_off::DisconnectPowerOff;
@@ -22,21 +22,47 @@ pub fn view(app: &App) -> Element<'_, Message> {
     ]
     .spacing(4);
 
+    let rename_cancel_button: Element<'_, Message> = if app.rename_editing {
+        button(text(fl!("settings-cancel-button")).size(13))
+            .padding([10, 18])
+            .style(button::text)
+            .on_press(Message::RenameEditCancelled)
+            .into()
+    } else {
+        Space::new().width(0).into()
+    };
+
     let rename_section = card::panel(
         column![
             text(fl!("settings-device-name-label"))
                 .size(13)
                 .style(text::secondary),
             row![
-                text_input(&fl!("settings-device-name-placeholder"), &app.rename_input)
-                    .on_input(Message::RenameInputChanged)
-                    .on_submit(Message::RenameSubmit)
-                    .padding(10)
-                    .width(Length::Fill),
-                button(text(fl!("settings-save-button")).size(13))
-                    .padding([10, 18])
-                    .style(button::secondary)
-                    .on_press(Message::RenameSubmit),
+                {
+                    let input =
+                        text_input(&fl!("settings-device-name-placeholder"), &app.rename_input)
+                            .padding(10)
+                            .width(Length::Fill);
+                    if app.rename_editing {
+                        input
+                            .on_input(Message::RenameInputChanged)
+                            .on_submit(Message::RenameEditToggled)
+                    } else {
+                        input
+                    }
+                },
+                rename_cancel_button,
+                button(
+                    text(if app.rename_editing {
+                        fl!("settings-save-button")
+                    } else {
+                        fl!("settings-edit-button")
+                    })
+                    .size(13)
+                )
+                .padding([10, 18])
+                .style(button::secondary)
+                .on_press(Message::RenameEditToggled),
             ]
             .spacing(10)
             .align_y(Alignment::Center),
@@ -193,23 +219,26 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .spacing(10),
     );
 
+    // Read-only: QCYx intentionally never writes firmware to the device.
+    // Flashing OTA updates from an unofficial, reverse-engineered client is a
+    // high-risk operation (a failed write can brick the earbuds), so that
+    // capability was dropped from the roadmap — this section only ever
+    // reports the version the device itself reports.
     let firmware_section = card::panel(
         column![
-            section_label(fl!("settings-firmware-section-title")),
-            row![
-                column![
-                    text(fl!("settings-firmware-version-label"))
-                        .size(12)
-                        .style(text::secondary),
-                    text(firmware_line(app)).size(14),
-                ]
-                .spacing(2)
-                .width(Length::Fill),
-                button(text(fl!("settings-firmware-check-button")).size(13))
-                    .padding([10, 18])
-                    .style(button::secondary),
+            text(fl!("settings-firmware-section-title"))
+                .size(13)
+                .style(text::secondary),
+            column![
+                text(fl!("settings-firmware-version-label"))
+                    .size(12)
+                    .style(text::secondary),
+                text(firmware_line(app)).size(14),
             ]
-            .align_y(Alignment::Center),
+            .spacing(2),
+            text(fl!("settings-firmware-readonly-note"))
+                .size(11)
+                .style(text::secondary),
         ]
         .spacing(10),
     );
@@ -337,15 +366,10 @@ fn confirmable_label(label: String, armed: bool) -> String {
 }
 
 fn firmware_line(app: &App) -> String {
-    match &app.firmware_version {
-        Some(v) => match (&v.left, &v.right) {
-            (Some(left), Some(right)) => format!("{left} / {right}"),
-            (Some(left), None) => left.clone(),
-            (None, Some(right)) => right.clone(),
-            (None, None) => fl!("home-firmware-unknown"),
-        },
-        None => fl!("home-firmware-unknown"),
-    }
+    app.firmware_version
+        .as_ref()
+        .and_then(|v| v.display())
+        .unwrap_or_else(|| fl!("home-firmware-unknown"))
 }
 
 fn status_line(status: &Option<String>) -> Element<'_, Message> {
@@ -353,16 +377,6 @@ fn status_line(status: &Option<String>) -> Element<'_, Message> {
         Some(s) => text(s.clone()).size(12).style(text::secondary).into(),
         None => Space::new().height(0).into(),
     }
-}
-
-fn section_label(label: String) -> Element<'static, Message> {
-    row![
-        text(label).size(13).style(text::secondary),
-        badge::coming_soon(fl!("badge-coming-soon")),
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center)
-    .into()
 }
 
 /// A toggle row wired to a real setting — takes the current state and the

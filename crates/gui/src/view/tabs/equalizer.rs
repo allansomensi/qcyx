@@ -1,9 +1,11 @@
 use crate::app::App;
-use crate::message::Message;
+use crate::localize::profile_label;
+use crate::message::{Message, ProfileScope};
 use crate::view::components::card;
-use iced::widget::{button, column, container, row, slider, text};
+use iced::widget::{Space, button, column, container, row, slider, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 use qcyx_core::eq::{CUSTOM_BAND_FREQS_HZ, CUSTOM_GAIN_MAX_DB, CUSTOM_GAIN_MIN_DB, EqPreset};
+use qcyx_core::profile::Profile;
 use qcyx_i18n::fl;
 
 const PRESETS: [EqPreset; 7] = [
@@ -95,10 +97,97 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .width(Length::Fill)
         .align_x(Alignment::Center);
 
-    column![header, presets, status, custom_note]
+    let eq_profiles_section = eq_profiles_section(app);
+
+    column![header, presets, status, custom_note, eq_profiles_section]
         .spacing(18)
         .width(Length::Fill)
         .into()
+}
+
+/// EQ-only profiles: save the currently-applied curve under a name, apply
+/// a saved one, and import/export to JSON — a lighter-weight sibling of
+/// the full-device profiles on the "Profiles" tab, scoped to just the EQ.
+fn eq_profiles_section(app: &App) -> Element<'_, Message> {
+    let rows: Vec<Element<'_, Message>> = app
+        .eq_profiles
+        .iter()
+        .cloned()
+        .map(eq_profile_row)
+        .collect();
+
+    let list = if rows.is_empty() {
+        column![
+            text(fl!("eq-profiles-empty"))
+                .size(12)
+                .style(text::secondary)
+        ]
+    } else {
+        column(rows).spacing(10)
+    };
+
+    let status = app
+        .eq_profiles_status
+        .clone()
+        .map(|s| -> Element<'_, Message> { text(s).size(12).style(text::secondary).into() })
+        .unwrap_or_else(|| Space::new().height(0).into());
+
+    card::panel(
+        column![
+            row![
+                text(fl!("eq-profiles-title"))
+                    .size(13)
+                    .style(text::secondary),
+                Space::new().width(Length::Fill),
+                button(text(fl!("profiles-import-button")).size(12))
+                    .padding([6, 12])
+                    .style(button::secondary)
+                    .on_press(Message::ImportProfile(ProfileScope::Eq)),
+            ]
+            .align_y(Alignment::Center),
+            list,
+            row![
+                text_input(&fl!("profiles-name-placeholder"), &app.new_eq_profile_name)
+                    .on_input(|value| Message::NewProfileNameChanged(ProfileScope::Eq, value))
+                    .on_submit(Message::SaveCurrentAsProfile(ProfileScope::Eq))
+                    .padding(10)
+                    .width(Length::Fill),
+                button(text(fl!("eq-profiles-save-button")).size(13))
+                    .padding([10, 18])
+                    .style(button::secondary)
+                    .on_press(Message::SaveCurrentAsProfile(ProfileScope::Eq)),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+            status,
+        ]
+        .spacing(10),
+    )
+}
+
+fn eq_profile_row(profile: Profile) -> Element<'static, Message> {
+    let name = profile.name.clone();
+    let label = profile_label(&profile.name);
+
+    card::tile(
+        row![
+            text(label).size(13).width(Length::Fill),
+            button(text(fl!("profiles-apply-button")).size(12))
+                .padding([6, 10])
+                .style(button::secondary)
+                .on_press(Message::ApplyProfile(ProfileScope::Eq, profile.clone())),
+            button(text(fl!("profiles-export-button")).size(12))
+                .padding([6, 10])
+                .style(button::text)
+                .on_press(Message::ExportProfile(ProfileScope::Eq, profile)),
+            button(text(fl!("profiles-delete-button")).size(12))
+                .padding([6, 10])
+                .style(button::text)
+                .on_press(Message::DeleteProfile(ProfileScope::Eq, name)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+    )
 }
 
 fn preset_chip(app: &App, preset: EqPreset) -> Element<'_, Message> {

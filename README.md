@@ -43,7 +43,11 @@ Configuration of QCY earbuds is officially restricted to the proprietary mobile 
 - ✅ **Multi-language Support:** UI available in English and Portuguese (pt-BR).
 - ✅ **Custom EQ:** Per-band editing.
 - 🚧 **Find my earbuds:** Trigger a high-frequency sound to locate misplaced earbuds.
-- 🚧 **Firmware update:** Flash official firmware updates over the air (OTA).
+- ✅ **Signal Strength:** Live Bluetooth RSSI indicator.
+- ✅ **Profiles:** Save, load, and share (import/export) full-device and EQ-only configuration profiles.
+- ✅ **Localization & Theme Persistence:** UI language and theme choice are remembered across restarts.
+
+> Firmware updates (OTA) are intentionally **not** planned: flashing firmware from an unofficial, reverse-engineered client is too risky for a third-party tool to take on (a failed write can brick the earbuds). QCYx only ever reads the installed version.
 
 ---
 

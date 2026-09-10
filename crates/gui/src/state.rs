@@ -17,15 +17,17 @@ pub enum Tab {
     Home,
     Anc,
     Equalizer,
+    Profiles,
     Settings,
     About,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 5] = [
+    pub const ALL: [Tab; 6] = [
         Tab::Home,
         Tab::Anc,
         Tab::Equalizer,
+        Tab::Profiles,
         Tab::Settings,
         Tab::About,
     ];

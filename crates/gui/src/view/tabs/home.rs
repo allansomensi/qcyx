@@ -111,17 +111,13 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .into()
 }
 
-/// Formats the firmware line.
+/// Formats the firmware line. When both earbuds report the same version,
+/// it's shown once rather than as a redundant "X / X" pair.
 fn firmware_display(app: &App) -> String {
-    match &app.firmware_version {
-        Some(v) => match (&v.left, &v.right) {
-            (Some(left), Some(right)) => format!("{left} / {right}"),
-            (Some(left), None) => left.clone(),
-            (None, Some(right)) => right.clone(),
-            (None, None) => fl!("home-firmware-unknown"),
-        },
-        None => fl!("home-firmware-unknown"),
-    }
+    app.firmware_version
+        .as_ref()
+        .and_then(|v| v.display())
+        .unwrap_or_else(|| fl!("home-firmware-unknown"))
 }
 
 /// Extracts one component's charge level as `0.0..=1.0`.

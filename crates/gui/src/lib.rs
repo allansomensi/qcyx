@@ -1,8 +1,10 @@
 use crate::app::App;
 
 pub mod app;
+mod localize;
 mod message;
 pub mod state;
+mod store;
 mod update;
 mod view;
 mod worker;

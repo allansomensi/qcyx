@@ -43,3 +43,26 @@ pub fn localize() {
         eprintln!("Error selecting system language: {error}");
     }
 }
+
+/// The currently active language, as a Fluent language id (e.g. `"en"`,
+/// `"pt-BR"`). Reflects whatever the last [`localize`]/[`set_language`]
+/// call selected.
+pub fn current_language() -> String {
+    LANGUAGE_LOADER.current_language().to_string()
+}
+
+/// Languages QCYx ships translations for, as Fluent language ids.
+pub const AVAILABLE_LANGUAGES: &[&str] = &["en", "pt-BR"];
+
+/// Switches the active UI language at runtime. Can be called again at any
+/// point (e.g. from a settings picker), not just at startup — every
+/// `fl!()` call after this returns reflects the new language.
+pub fn set_language(language_id: &str) -> Result<(), String> {
+    let requested: unic_langid::LanguageIdentifier =
+        language_id.parse().map_err(|e| format!("{e}"))?;
+
+    localizer()
+        .select(&[requested])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}

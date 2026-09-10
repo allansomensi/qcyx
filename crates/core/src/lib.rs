@@ -11,6 +11,7 @@ pub mod game_mode;
 pub mod ldac;
 pub mod multipoint;
 pub mod notification_volume;
+pub mod profile;
 pub mod protocol;
 pub mod query;
 pub mod response;

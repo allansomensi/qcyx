@@ -2,12 +2,13 @@
 //! Written to the command characteristic (`00001001`, `0xFF`-framed).
 
 use crate::protocol::Command;
+use serde::{Deserialize, Serialize};
 
 /// Opcode for notification volume (read and write).
 pub const OPCODE: u8 = 0x1D;
 
 /// The four levels the official app exposes for notification volume.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NotificationVolume {
     Low,
     Medium,

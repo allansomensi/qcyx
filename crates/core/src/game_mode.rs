@@ -2,6 +2,7 @@
 //! Written to the command characteristic (`00001001`, `0xFF`-framed).
 
 use crate::protocol::Command;
+use serde::{Deserialize, Serialize};
 
 /// Opcode for game mode (read and write).
 pub const OPCODE: u8 = 0x09;
@@ -10,7 +11,7 @@ pub const OPCODE: u8 = 0x09;
 /// booleans, this opcode encodes on/off as `0x01`/`0x02` — confirmed by both
 /// the connect-time default (`0x02`, off) and the write/echo pair for each
 /// toggle direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GameMode {
     On,
     Off,
