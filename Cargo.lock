@@ -3417,7 +3417,7 @@ checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
 name = "qcyx"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "qcyx_cli",
  "qcyx_gui",
@@ -3428,7 +3428,7 @@ dependencies = [
 
 [[package]]
 name = "qcyx_cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "qcyx_core",
@@ -3437,7 +3437,7 @@ dependencies = [
 
 [[package]]
 name = "qcyx_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "btleplug",
  "cargo-husky",
@@ -3453,7 +3453,7 @@ dependencies = [
 
 [[package]]
 name = "qcyx_gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "iced",
  "qcyx_core",
@@ -3468,7 +3468,7 @@ dependencies = [
 
 [[package]]
 name = "qcyx_i18n"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "i18n-embed",
  "i18n-embed-fl",

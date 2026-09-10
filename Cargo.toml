@@ -1,6 +1,6 @@
 [workspace.package]
 description = "Unofficial CLI for controlling QCY earbuds over BLE"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Allan Somensi <allansomensidev@proton.me>"]
 documentation = "https://github.com/allansomensi/qcyx"
 homepage = "https://github.com/allansomensi/qcyx"
