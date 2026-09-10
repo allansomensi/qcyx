@@ -1,6 +1,7 @@
 use crate::{app::App, message::Message, state::AppState};
 use iced::Task;
 use qcyx_core::client::AncConfirmation;
+use qcyx_core::command::{AncScene, TransparencyMode};
 use qcyx_core::scheduled_power_off::ScheduledPowerOff;
 use qcyx_core::session;
 use qcyx_core::touch_action::TouchControl;
@@ -20,6 +21,11 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             app.state = AppState::Connected;
             app.error_log = None;
             app.active_scene = info.initial_anc_scene;
+            if let Some(AncScene::Transparency(TransparencyMode::AmbientSound { level })) =
+                info.initial_anc_scene
+            {
+                app.transparency_level = level;
+            }
             app.balance = info.initial_balance.unwrap_or(50);
             app.rename_input = info.device_name.clone().unwrap_or_default();
             app.device_name = info.device_name;
