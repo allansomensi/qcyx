@@ -18,12 +18,20 @@ pub fn run() -> iced::Result {
 
     tracing::info!("Starting QCYx...");
 
+    let icon = iced::window::icon::from_file_data(
+        include_bytes!("../../../pkg/windows/Product.ico"),
+        None,
+    )
+    .inspect_err(|err| tracing::warn!(%err, "failed to load window icon"))
+    .ok();
+
     iced::application(App::new, App::update, App::view)
         .title(|_app: &App| "QCYx".to_string())
         .theme(App::theme)
         .subscription(|app: &App| app.subscription())
         .window(iced::window::Settings {
             min_size: Some(iced::Size::new(900.0, 680.0)),
+            icon,
             ..Default::default()
         })
         .centered()

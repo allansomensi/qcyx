@@ -27,4 +27,7 @@ path = "src/cli.rs"
 qcyx_gui = { path = "../gui" }
 qcyx_cli = { path = "../cli" }
 qcyx_i18n = { path = "../i18n" }
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = { workspace = true }

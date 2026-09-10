@@ -13,7 +13,13 @@ exclude = ["/.github/", "/pkg/"]
 edition = "2024"
 
 [workspace]
-members = ["crates/core", "crates/cli", "crates/gui", "crates/i18n", "crates/qcyx"]
+members = [
+    "crates/core",
+    "crates/cli",
+    "crates/gui",
+    "crates/i18n",
+    "crates/qcyx",
+]
 resolver = "2"
 
 [profile.release]
@@ -36,7 +42,7 @@ uuid = "1.26"
 
 futures = "0.3.34"
 clap = { version = "4.6", features = ["derive"] }
-iced = { version = "0.14", features = ["tokio", "svg"] }
+iced = { version = "0.14", features = ["tokio", "svg", "image"] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "2.0"
 
@@ -51,6 +57,8 @@ i18n-embed = { version = "0.16", features = [
 ] }
 i18n-embed-fl = "0.10"
 rust-embed = "8.9"
+
+winresource = "0.1"
 
 # Dev
 cargo-husky = { version = "1.5.0", default-features = false, features = [
