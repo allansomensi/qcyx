@@ -120,11 +120,12 @@ fn firmware_display(app: &App) -> String {
         .unwrap_or_else(|| fl!("home-firmware-unknown"))
 }
 
-/// Extracts one component's charge level as `0.0..=1.0`.
+/// Extracts one component's charge level as `0.0..=1.0`. The wire field has
+/// 7 bits, so anything past 100 is capped rather than shown as "127%".
 fn battery_level(app: &App, pick: impl Fn(&BatteryStatus) -> BatteryComponent) -> Option<f32> {
     app.battery
         .as_ref()
-        .map(|status| pick(status).level as f32 / 100.0)
+        .map(|status| f32::from(pick(status).level.min(100)) / 100.0)
 }
 
 /// A small "stale" hint shown when the last battery read failed.

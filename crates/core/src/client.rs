@@ -79,10 +79,19 @@ const SUBSCRIBE_SETTLE: Duration = Duration::from_millis(150);
 /// of the negotiated MTU, regardless of `WriteType`.
 const ATT_WRITE_HEADER: u16 = 3;
 
+/// Payload every ATT link carries in a single PDU: the spec-minimum MTU
+/// minus [`ATT_WRITE_HEADER`].
+const MIN_ATT_PAYLOAD: usize = (btleplug::api::DEFAULT_MTU_SIZE - ATT_WRITE_HEADER) as usize;
+
 /// Returns `true` when the peripheral advertises the QCY Company ID.
 async fn is_qcy(peripheral: &Peripheral) -> bool {
+    let properties = guard(budget::SCAN_CONTROL, "properties", async {
+        Ok(peripheral.properties().await?)
+    })
+    .await;
+
     matches!(
-        peripheral.properties().await,
+        properties,
         Ok(Some(properties)) if properties.manufacturer_data.contains_key(&QCY_COMPANY_ID)
     )
 }
@@ -162,7 +171,10 @@ async fn find_on_adapter(adapter: &Adapter) -> Result<Option<Peripheral>, CoreEr
 /// depending on the boot. Adapters are searched concurrently and the first
 /// match wins; a failing adapter is logged, not propagated.
 async fn find_qcy_device() -> Result<Peripheral, CoreError> {
-    let manager = Manager::new().await?;
+    let manager = guard(budget::SCAN_CONTROL, "manager", async {
+        Ok(Manager::new().await?)
+    })
+    .await?;
     let adapters = guard(budget::SCAN_CONTROL, "adapters", async {
         Ok(manager.adapters().await?)
     })
@@ -176,10 +188,11 @@ async fn find_qcy_device() -> Result<Peripheral, CoreError> {
         let mut searches: FuturesUnordered<_> = adapters
             .iter()
             .map(|adapter| async move {
-                let label = adapter
-                    .adapter_info()
-                    .await
-                    .unwrap_or_else(|_| "unknown adapter".to_string());
+                let label = guard(budget::SCAN_CONTROL, "adapter_info", async {
+                    Ok(adapter.adapter_info().await?)
+                })
+                .await
+                .unwrap_or_else(|_| "unknown adapter".to_string());
                 (label, find_on_adapter(adapter).await)
             })
             .collect();
@@ -206,7 +219,11 @@ async fn find_qcy_device() -> Result<Peripheral, CoreError> {
     // follows on BlueZ. Cancelled searches never get to clean up after
     // themselves, so cleanup lives here.
     for adapter in &adapters {
-        let _ = adapter.stop_scan().await;
+        let _ = guard(budget::SCAN_CONTROL, "stop_scan", async {
+            adapter.stop_scan().await?;
+            Ok(())
+        })
+        .await;
     }
 
     outcome
@@ -247,17 +264,23 @@ pub struct DeviceHandle {
 impl DeviceHandle {
     /// Picks the write type for a payload of `payload_len` bytes.
     ///
-    /// `WriteWithoutResponse` has no long-write path: if the payload doesn't
-    /// fit inside the peripheral's *currently negotiated* MTU, it is
-    /// truncated silently rather than split. The EQ preset command is 145
-    /// bytes and the characteristic does not reliably accept `WriteRequest`
-    /// for it, so this must go out as `WriteWithoutResponse` against an
-    /// actually-negotiated MTU rather than the unnegotiated 20-byte default
-    /// — `btleplug` negotiates that MTU per-platform after service discovery
-    /// without the app asking (BlueZ, WinRT and CoreBluetooth all update
-    /// `Peripheral::mtu()` on their own), so checking the real value here is
-    /// enough.
+    /// `WriteWithoutResponse` has no long-write path: a payload that doesn't
+    /// fit the *currently negotiated* MTU is truncated silently rather than
+    /// split. The 147-byte EQ frame still has to go out as
+    /// `WriteWithoutResponse` — the characteristic doesn't reliably accept
+    /// `WriteRequest` for it — so it relies on the negotiated MTU, which
+    /// `btleplug` negotiates per platform after discovery (BlueZ, WinRT and
+    /// CoreBluetooth all update `Peripheral::mtu()` on their own).
+    ///
+    /// Payloads that fit the spec-minimum MTU skip `mtu()` entirely: the
+    /// answer can't change, and btleplug 0.13's BlueZ backend panics inside
+    /// `mtu()` when bluetoothd doesn't expose the characteristic MTU — an
+    /// abort in release builds.
     fn write_type_for(&self, payload_len: usize) -> WriteType {
+        if payload_len <= MIN_ATT_PAYLOAD {
+            return self.write_type;
+        }
+
         let usable_mtu = self.peripheral.mtu().saturating_sub(ATT_WRITE_HEADER) as usize;
         if payload_len > usable_mtu {
             WriteType::WithResponse
@@ -695,18 +718,19 @@ pub async fn connect() -> Result<DeviceHandle, CoreError> {
     let peripheral = find_qcy_device().await?;
 
     if let Err(e) = connect_with_retry(&peripheral).await {
-        let _ = peripheral.disconnect().await;
+        release(&peripheral).await;
         return Err(e);
     }
 
     match setup_device(&peripheral).await {
         Ok(setup) => {
-            let device_name = peripheral
-                .properties()
-                .await
-                .ok()
-                .flatten()
-                .and_then(|p| p.local_name);
+            let device_name = guard(budget::GATT_OP, "properties", async {
+                Ok(peripheral.properties().await?)
+            })
+            .await
+            .ok()
+            .flatten()
+            .and_then(|p| p.local_name);
 
             match &device_name {
                 Some(name) => {
@@ -732,10 +756,20 @@ pub async fn connect() -> Result<DeviceHandle, CoreError> {
             })
         }
         Err(e) => {
-            let _ = peripheral.disconnect().await;
+            release(&peripheral).await;
             Err(e)
         }
     }
+}
+
+/// Best-effort, bounded disconnect for a failed connection attempt. A link
+/// left open stops the device advertising, so the next scan finds nothing.
+async fn release(peripheral: &Peripheral) {
+    let _ = guard(budget::GATT_OP, "disconnect", async {
+        peripheral.disconnect().await?;
+        Ok(())
+    })
+    .await;
 }
 
 /// Attempts connection, retrying on immediate drops.
@@ -745,7 +779,7 @@ async fn connect_with_retry(peripheral: &Peripheral) -> Result<(), CoreError> {
     for attempt in 0..CONNECT_RETRIES {
         if attempt > 0 {
             tracing::info!(
-                "BLE link dropped, retrying ({}/{CONNECT_RETRIES})",
+                "BLE connect attempt failed, retrying ({}/{CONNECT_RETRIES})",
                 attempt + 1
             );
             time::sleep(Duration::from_millis(500 * u64::from(attempt))).await;
@@ -887,7 +921,11 @@ async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError>
         WriteType::WithResponse
     };
 
-    let _ = peripheral.unsubscribe(&notify_char).await;
+    let _ = guard(budget::GATT_OP, "unsubscribe_notify", async {
+        peripheral.unsubscribe(&notify_char).await?;
+        Ok(())
+    })
+    .await;
     guard(budget::GATT_OP, "subscribe_notify", async {
         peripheral.subscribe(&notify_char).await?;
         Ok(())
@@ -902,7 +940,11 @@ async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError>
             continue;
         }
 
-        let _ = peripheral.unsubscribe(characteristic).await;
+        let _ = guard(budget::GATT_OP, "unsubscribe_secondary", async {
+            peripheral.unsubscribe(characteristic).await?;
+            Ok(())
+        })
+        .await;
 
         let subscribed = guard(budget::GATT_OP, "subscribe_secondary", async {
             peripheral.subscribe(characteristic).await?;
@@ -925,12 +967,22 @@ async fn setup_device(peripheral: &Peripheral) -> Result<SetupResult, CoreError>
     })
 }
 
-/// Executes a block and guarantees disconnection afterwards.
+/// Disconnects after a command that wrote to the device, whatever `result`
+/// is.
 async fn finish<T>(handle: DeviceHandle, result: Result<T, CoreError>) -> Result<T, CoreError> {
     // The margin every `WriteWithoutResponse` used to pay, charged once, here,
     // where it is actually needed: the stack must flush before the teardown.
     time::sleep(DISCONNECT_FLUSH).await;
+    finish_read(handle, result).await
+}
 
+/// Disconnects after a read-only command. Nothing is left queued in the
+/// stack — a query's own write was answered before this runs — so no flush
+/// margin is paid.
+async fn finish_read<T>(
+    handle: DeviceHandle,
+    result: Result<T, CoreError>,
+) -> Result<T, CoreError> {
     // A failed disconnect is operational noise, never the command's verdict.
     // Returning it told the user a write had failed after it had applied.
     if let Err(e) = handle.disconnect().await {
@@ -940,37 +992,13 @@ async fn finish<T>(handle: DeviceHandle, result: Result<T, CoreError>) -> Result
     result
 }
 
-fn print_anc_confirmation(confirmation: AncConfirmation, mode: u8, sub_scene: u8, noise_value: u8) {
-    match confirmation {
-        AncConfirmation::Applied => println!(
-            "{}",
-            fl!(
-                "cli-anc-set",
-                mode = mode.to_string(),
-                sub_scene = sub_scene.to_string(),
-                noise_value = noise_value.to_string()
-            )
-        ),
-        AncConfirmation::Rejected => println!("{}", fl!("cli-anc-unconfirmed")),
-        AncConfirmation::EchoedOnly => println!("{}", fl!("cli-anc-echoed")),
-        AncConfirmation::NoResponse => println!("{}", fl!("cli-anc-timeout")),
-    }
-}
-
-/// Connects, writes ANC scene, waits for confirmation, and disconnects.
-pub async fn set_anc_scene(scene: AncScene) -> Result<(), CoreError> {
+/// Connects, writes an ANC scene, waits for confirmation, and disconnects.
+///
+/// The confirmation is returned for the caller to report: a rejected or
+/// unconfirmed write is an outcome, not an error, at this layer.
+pub async fn set_anc_scene(scene: AncScene) -> Result<AncConfirmation, CoreError> {
     let handle = connect().await?;
-
-    let result = async {
-        let (mode, sub_scene, noise_value) = scene.triplet();
-        let cmd = command::anc_scene(scene);
-
-        let confirmation = handle.send_anc_and_confirm(cmd).await?;
-        print_anc_confirmation(confirmation, mode, sub_scene, noise_value);
-        Ok(())
-    }
-    .await;
-
+    let result = handle.send_anc_and_confirm(command::anc_scene(scene)).await;
     finish(handle, result).await
 }
 
@@ -978,7 +1006,7 @@ pub async fn set_anc_scene(scene: AncScene) -> Result<(), CoreError> {
 pub async fn get_battery() -> Result<BatteryStatus, CoreError> {
     let handle = connect().await?;
     let result = handle.read_battery().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Device info including name and firmware version.
@@ -995,7 +1023,7 @@ pub async fn get_version() -> Result<DeviceInfo, CoreError> {
         name: handle.device_name().map(str::to_string),
         firmware,
     });
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, sets channel balance, and disconnects.
@@ -1051,7 +1079,7 @@ pub async fn set_notification_volume(level: NotificationVolume) -> Result<(), Co
 pub async fn get_notification_volume() -> Result<Option<NotificationVolume>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_notification_volume().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, sets the scheduled power-off timer, and disconnects.
@@ -1065,7 +1093,7 @@ pub async fn set_scheduled_power_off(value: ScheduledPowerOff) -> Result<(), Cor
 pub async fn get_scheduled_power_off() -> Result<Option<ScheduledPowerOff>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_scheduled_power_off().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, sets the power-off-after-disconnect timer, and disconnects.
@@ -1079,7 +1107,7 @@ pub async fn set_disconnect_power_off(value: DisconnectPowerOff) -> Result<(), C
 pub async fn get_disconnect_power_off() -> Result<Option<DisconnectPowerOff>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_disconnect_power_off().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, sets wear detection and its ANC-on-wear sub-toggle, and disconnects.
@@ -1093,7 +1121,7 @@ pub async fn set_wear_detection(state: WearDetection) -> Result<(), CoreError> {
 pub async fn get_wear_detection() -> Result<Option<WearDetection>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_wear_detection().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, sets game mode, and disconnects.
@@ -1107,7 +1135,7 @@ pub async fn set_game_mode(state: GameMode) -> Result<(), CoreError> {
 pub async fn get_game_mode() -> Result<Option<GameMode>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_game_mode().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, assigns a touch action, and disconnects.
@@ -1124,7 +1152,7 @@ pub async fn set_touch_action(
 pub async fn read_touch_actions() -> Result<touch_action::TouchActionMap, CoreError> {
     let handle = connect().await?;
     let result = handle.read_touch_actions().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, sets the LDAC toggle, and disconnects.
@@ -1138,7 +1166,7 @@ pub async fn set_ldac(state: Ldac) -> Result<(), CoreError> {
 pub async fn get_ldac() -> Result<Option<Ldac>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_ldac().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, sets the multipoint toggle, and disconnects.
@@ -1152,7 +1180,7 @@ pub async fn set_multipoint(state: Multipoint) -> Result<(), CoreError> {
 pub async fn get_multipoint() -> Result<Option<Multipoint>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_multipoint().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }
 
 /// Connects, sets sleep mode, and disconnects.
@@ -1166,5 +1194,5 @@ pub async fn set_sleep_mode(state: SleepMode) -> Result<(), CoreError> {
 pub async fn get_sleep_mode() -> Result<Option<SleepMode>, CoreError> {
     let handle = connect().await?;
     let result = handle.get_sleep_mode().await;
-    finish(handle, result).await
+    finish_read(handle, result).await
 }

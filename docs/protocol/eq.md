@@ -76,4 +76,4 @@ Bytes past the 10th record (offset 71..142 of the table) are left zeroed by `qcy
 
 ### Write type
 
-This command (`opcode` + `param_len` + ID + table, up to 147 bytes total) must be sent as `WriteWithoutResponse`, after the ATT MTU has been negotiated above its default (23 bytes) — the characteristic does not reliably accept `WriteRequest` for a payload this size. `DeviceHandle::write_type_for` checks the peripheral's actual negotiated MTU (`Peripheral::mtu()`) rather than the unnegotiated default floor before picking the write type.
+This command (`opcode` + `param_len` + ID + table, up to 147 bytes total) must be sent as `WriteWithoutResponse`, after the ATT MTU has been negotiated above its default (23 bytes) — the characteristic does not reliably accept `WriteRequest` for a payload this size. `DeviceHandle::write_type_for` checks the peripheral's actual negotiated MTU (`Peripheral::mtu()`) rather than the unnegotiated default floor before picking the write type. Payloads that fit the spec-minimum ATT payload (20 bytes) skip that check — see [implementation-notes.md](./implementation-notes.md#bluez-mtu-panic).

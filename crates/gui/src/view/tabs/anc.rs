@@ -3,7 +3,9 @@ use crate::message::Message;
 use crate::view::components::{badge, card};
 use iced::widget::{Space, column, container, row, slider, text, toggler};
 use iced::{Alignment, Element, Length};
-use qcyx_core::command::{AncScene, NcLevel, NoiseCancellingMode, TransparencyMode};
+use qcyx_core::command::{
+    AMBIENT_LEVEL_MAX, AMBIENT_LEVEL_MIN, AncScene, NcLevel, NoiseCancellingMode, TransparencyMode,
+};
 use qcyx_i18n::fl;
 
 pub fn view(app: &App) -> Element<'_, Message> {
@@ -56,6 +58,8 @@ fn transparency_section(app: &App) -> Element<'_, Message> {
         Some(AncScene::Transparency(TransparencyMode::VocalEnhancement))
     );
 
+    let ambient_level = app.transparency_level;
+
     let toggle_row = row![
         column![
             text(fl!("anc-vocal-enhancement-label")).size(14),
@@ -65,11 +69,14 @@ fn transparency_section(app: &App) -> Element<'_, Message> {
         ]
         .spacing(2)
         .width(Length::Fill),
-        toggler(vocal_enhancement_on).on_toggle(|on| {
+        toggler(vocal_enhancement_on).on_toggle(move |on| {
             Message::SetAnc(AncScene::Transparency(if on {
                 TransparencyMode::VocalEnhancement
             } else {
-                TransparencyMode::AmbientSound { level: 1 }
+                // Back to ambient sound at the level the slider shows.
+                TransparencyMode::AmbientSound {
+                    level: ambient_level,
+                }
             }))
         }),
     ]
@@ -91,7 +98,7 @@ fn transparency_section(app: &App) -> Element<'_, Message> {
                     .size(12)
                     .style(text::secondary),
                 slider(
-                    1..=6u8,
+                    AMBIENT_LEVEL_MIN..=AMBIENT_LEVEL_MAX,
                     app.transparency_level,
                     Message::TransparencyLevelChanged
                 )

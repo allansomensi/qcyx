@@ -3,6 +3,7 @@ name = "qcyx_i18n"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 i18n-embed = { workspace = true }

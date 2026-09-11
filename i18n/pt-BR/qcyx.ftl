@@ -1,4 +1,5 @@
 cli-welcome = Iniciando o Gerenciador Bluetooth QCYx...
+cli-error = Erro: {$error}
 
 core-connecting = Conectando ao dispositivo...
 core-connected = Conectado!
@@ -10,11 +11,13 @@ error-device-not-found = Nenhum dispositivo QCY encontrado. Certifique-se de que
 error-service-not-found = Serviço GATT QCY não encontrado no dispositivo.
 error-connection-dropped = Conectou, mas o dispositivo derrubou o link logo em seguida. Isso geralmente significa que ele ainda não está pareado via BLE com o Windows — vá em Configurações > Bluetooth e dispositivos e pareie por lá (isso é separado do pareamento de áudio que você já fez), depois tente de novo.
 error-operation-timeout = A pilha Bluetooth parou de responder e a operação foi abandonada. Reconecte e tente de novo.
+error-connection-dropped-generic = Conectou, mas o dispositivo derrubou o link logo em seguida. Verifique se os fones estão fora do estojo e ao alcance, depois tente de novo.
+error-not-connected = Não conectado ao dispositivo.
 
 cli-anc-set = Cenário de ANC definido — modo: {$mode}, sub-cenário: {$sub_scene}, valor de ruído: {$noise_value}
 cli-anc-unconfirmed = Comando de ANC enviado, mas o dispositivo não confirmou — pode não ter sido aplicado.
 cli-anc-timeout = Comando de ANC enviado, mas nenhuma confirmação chegou a tempo — pode não ter sido aplicado.
-cli-anc-echoed = Cenário de ANC aceito pelo dispositivo (eco recebido); aguardando confirmação final...
+cli-anc-echoed = Cenário de ANC aceito pelo dispositivo (eco recebido), mas a confirmação final não chegou a tempo.
 
 cli-battery-title = Status da bateria:
 battery-left = Fone esquerdo
@@ -52,18 +55,16 @@ cli-touch-action-set = Ação de toque definida.
 
 waiting-title = Aguardando dispositivo...
 waiting-subtitle = Certifique-se de que seus fones estão por perto e fora da case.
-connected-header = Conectado
 error-title = Erro de Conexão
 error-unknown = Erro desconhecido
 
-gui-anc-title = Controle de Ruído
 gui-anc-normal = Normal
 gui-anc-transparency = Transparência
 gui-anc-hint = Escolha um modo para aplicá-lo aos seus fones.
 gui-anc-applied = Cenário de ANC aplicado.
 gui-anc-unconfirmed = Comando de ANC enviado, mas o dispositivo não confirmou — pode não ter sido aplicado.
 gui-anc-timeout = Comando de ANC enviado, mas nenhuma confirmação chegou a tempo — pode não ter sido aplicado.
-gui-anc-echoed = Cenário de ANC aceito pelo dispositivo (eco recebido); aguardando confirmação final...
+gui-anc-echoed = Cenário de ANC aceito pelo dispositivo (eco recebido), mas a confirmação final não chegou a tempo.
 gui-anc-error = Falha ao definir o cenário de ANC: {$error}
 gui-balance-error = Falha ao definir o equilíbrio do canal: {$error}
 gui-retry = Tentar novamente
@@ -94,7 +95,6 @@ home-firmware-unknown = Desconhecido
 home-battery-title = Bateria
 home-battery-left = Fone Esquerdo
 home-battery-right = Fone Direito
-home-battery-case = Estojo
 home-battery-stale = Última leitura pode estar desatualizada
 home-quick-actions-title = Ações rápidas
 home-action-find-device = Localizar fones
@@ -107,7 +107,6 @@ home-status-idle = Aguardando
 # ANC tab
 anc-title = Cancelamento de Ruído
 anc-subtitle = Escolha um modo para aplicá-lo aos seus fones.
-anc-noise-cancelling = Cancelamento de Ruído
 anc-active = Ativo
 
 anc-transparency-detail-title = Transparência
@@ -262,6 +261,12 @@ profiles-export-done = Perfil exportado.
 profiles-export-error = Falha ao exportar o perfil: {$error}
 profiles-import-done = Perfil "{$name}" importado.
 profiles-import-error = Falha ao importar o perfil: {$error}
+profile-error-parse = O arquivo não é um perfil válido do QCYx: {$reason}
+profile-error-too-large = O arquivo é grande demais para ser um perfil do QCYx.
+profile-error-name = O nome do perfil está vazio ou é reservado.
+profile-error-empty = O perfil não contém nenhuma configuração.
+profile-error-eq-conflict = O perfil define ao mesmo tempo uma predefinição do equalizador e uma curva personalizada.
+profile-error-out-of-range = O perfil tem um valor fora da faixa permitida em "{$field}".
 
 built-in-focus = Foco
 built-in-calls = Ligações

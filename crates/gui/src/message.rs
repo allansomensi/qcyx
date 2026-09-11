@@ -128,10 +128,12 @@ pub enum Message {
     DeleteProfile(ProfileScope, String),
     /// Export a profile to a JSON file via a native save dialog.
     ExportProfile(ProfileScope, Profile),
-    ExportProfileResult(ProfileScope, Result<(), String>),
+    /// `Ok(false)`: the save dialog was cancelled.
+    ExportProfileResult(ProfileScope, Result<bool, String>),
     /// Import a profile from a JSON file via a native open dialog.
     ImportProfile(ProfileScope),
-    ImportProfileResult(ProfileScope, Result<Profile, String>),
+    /// `Ok(None)`: the open dialog was cancelled.
+    ImportProfileResult(ProfileScope, Result<Option<Profile>, String>),
     /// Clears the active-profile indicator without touching any device
     /// setting — a profile is just a label for "these are the settings I
     /// last applied together", not a device-side mode, so there's nothing

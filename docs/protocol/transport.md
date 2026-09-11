@@ -28,12 +28,17 @@ See [anc.md](./anc.md#confirmation-flow) for the two-notification example this p
 
 | Parameter | Value | Notes |
 |---|---|---|
-| Scan duration | `5s` | Time to scan for QCY advertisements |
+| Scan timeout | `8s` | Upper bound — the scan resolves on the first matching advertisement |
 | ANC confirmation timeout | `10s` | Covers echo + `ANC_RESULT`; real-world latency is 2.5–3.1s on a clean connection, with generous margin for Windows |
-| Post-write flush delay | `300ms` | Lets the platform BLE stack flush before a caller can disconnect |
+| Parameter query timeout | `5s` | Reply to a `0xFE` query |
+| Post-write flush | `60ms` | After a `WriteWithoutResponse` only, which carries no ATT ack |
+| Pre-disconnect flush | `250ms` | One-shot CLI commands that wrote, before the teardown; read-only commands skip it |
+| GATT operation budget | `5s` | Every other call into the BLE stack: reads, writes, subscriptions, liveness checks, disconnect |
+| Connect budget | `12s` per attempt | See [error-recovery.md](./error-recovery.md) |
+| Discovery budget | `8s` per attempt | Service and characteristic discovery |
 
 ---
 
 ## Byte Order
 
-Every confirmed field so far (opcode, param length, mode, sub-scene, noise value, `ANC_RESULT` status) is a single byte. No multi-byte integer field exists yet, so no byte-order convention has been established.
+Multi-byte integer fields are little-endian: the power-off timers (`u16` minutes, see [device-settings.md](./device-settings.md)) and the custom EQ records (`u16` frequency in Hz, `i16` gain in hundredths of a dB, see [eq.md](./eq.md#custom-per-band-curve)). Every other confirmed field is a single byte.

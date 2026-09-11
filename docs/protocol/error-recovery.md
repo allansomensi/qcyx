@@ -20,6 +20,8 @@ error-connection-dropped =
   you already did), then try again.
 ```
 
+The pairing hint is Windows-specific; other platforms show `error-connection-dropped-generic` instead.
+
 ---
 
 ## Connect Retry
@@ -74,6 +76,10 @@ See [ble-device.md](./ble-device.md#-multi-service-uuid-collision). The device e
 | `ConnectionDropped` | Connect succeeded, link died before setup finished | Windows BLE pairing/bonding not done |
 | `InvalidPacket` | `0xFF`-framed buffer failed to parse | Malformed notification; non-fatal, ignored |
 | `BluetoothError` | Passthrough of underlying `btleplug` error | Platform-specific BLE stack failure |
+| `NotConnected` | A background poll found no open session | Link lost; the GUI reconnects through `watch_disconnect` |
+| `OperationTimeout` | A BLE stack call exceeded its budget | Link died uncleanly; stack stopped responding |
+| `FrameTooLarge` | Parameters don't fit the frame's one-byte body length | Programming error — rejected before anything is sent |
+| `InvalidName` | A rename sanitizes to an empty name | Blank or control-character-only input |
 
 ---
 
@@ -81,8 +87,8 @@ See [ble-device.md](./ble-device.md#-multi-service-uuid-collision). The device e
 
 A BLE peripheral stops advertising while connected. Leaving a failed connection attempt open silently breaks every subsequent scan until the OS times it out. Every failure path in `client::connect` disconnects on error; every successful CLI command funnels through `finish`, which guarantees `disconnect()` regardless of outcome.
 
-The GUI session follows the same principle at a coarser grain: on any command error, the cached connection is dropped and best-effort disconnected, so the next command reconnects from a clean state.
+The GUI session follows the same principle at a coarser grain: when a command fails at the transport level (`CoreError::is_transport`), the cached connection is dropped and best-effort disconnected, so the next command reconnects from a clean state. Validation and parsing failures leave a healthy link alone — reconnecting would only fail the same way.
 
 ### Not Every Read Failure Should Trigger This
 
-"Drop the connection on any error" is right for a deliberate write (`set_anc_scene`), but wrong for a periodic background poll — a single transient read hiccup shouldn't tear down and reconnect the whole session. `read_battery` doesn't touch the shared connection on failure; detecting an actually-dead link is `is_connected`'s job, checked on its own interval (`watch_disconnect`). A background poll should report its own failure to the UI and nothing more.
+Dropping the connection is right for a deliberate write that hit a transport failure, but wrong for a periodic background poll — a single transient read hiccup shouldn't tear down and rebuild the whole session. `read_battery` and `read_rssi` run only against an already-open session: they never connect and never drop it on failure. Detecting an actually-dead link is `is_connected`'s job, checked on its own interval (`watch_disconnect`), and it best-effort disconnects the handle it releases. A poll that connected on its own could also be cancelled mid-connect by a GUI state change, leaving the peripheral connected — and a connected peripheral stops advertising, so the next scan finds nothing.

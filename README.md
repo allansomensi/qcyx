@@ -80,7 +80,7 @@ You can find pre-built binaries, installers (`.msi`), and automated installation
 <details>
 <summary><strong>Or install from source (Cargo)</strong></summary>
 
-**Prerequisites:** Rust toolchain (`rustup`), `libusb` 1.0+.
+**Prerequisites:** Rust 1.90+ (`rustup`); on Linux, `libdbus-1-dev` and `pkg-config`.
 
 ```bash
 git clone https://github.com/allansomensi/qcyx
@@ -97,7 +97,7 @@ The binary will be at `target/release/qcyx`.
 
 ### CLI
 
-The CLI connects, sends one command, and disconnects — a fresh session per invocation.
+The CLI connects, sends one command, and disconnects — a fresh session per invocation. Results go to stdout, progress and errors to stderr; the exit code is non-zero when a command fails or the device doesn't confirm an ANC change.
 
 ```bash
 # Set ANC to normal (no ANC/transparency processing)

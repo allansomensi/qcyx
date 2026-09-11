@@ -14,13 +14,22 @@ pub const OPCODE: u8 = 0x14;
 /// Sentinel `u16` value meaning "disabled".
 pub const DISABLED: u16 = 0xFFFF;
 
+/// Smallest arming value accepted from user input; `0` was never observed
+/// on the wire.
+pub const MIN_MINUTES: u16 = 1;
+
+/// Largest arming value accepted from user input: [`DISABLED`] itself would
+/// silently turn the timer off.
+pub const MAX_MINUTES: u16 = DISABLED - 1;
+
 /// A scheduled power-off setting: disabled, or armed for a number of minutes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduledPowerOff {
     Disabled,
     /// Minutes until power-off. The official app's presets are 15/30/60/90,
-    /// plus a free-form custom field — any `u16` other than [`DISABLED`] is
-    /// accepted here since the device places no confirmed limit on it.
+    /// plus a free-form custom field. User input is limited to
+    /// [`MIN_MINUTES`]`..=`[`MAX_MINUTES`]; the device places no confirmed
+    /// limit of its own.
     Minutes(u16),
 }
 
@@ -109,5 +118,14 @@ mod tests {
     #[test]
     fn rejects_short_payload() {
         assert_eq!(parse_scheduled_power_off(&[0x3C]), None);
+    }
+
+    #[test]
+    fn max_minutes_stays_clear_of_the_disabled_sentinel() {
+        let cmd = set_scheduled_power_off(ScheduledPowerOff::Minutes(MAX_MINUTES));
+        assert_eq!(
+            parse_scheduled_power_off(&cmd.parameters),
+            Some(ScheduledPowerOff::Minutes(MAX_MINUTES))
+        );
     }
 }

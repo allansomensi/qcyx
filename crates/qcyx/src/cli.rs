@@ -1,10 +1,7 @@
+use std::process::ExitCode;
+
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     qcyx_i18n::localize();
-
-    if let Err(e) = qcyx_cli::run().await {
-        eprintln!("Error: {e}");
-
-        std::process::exit(1);
-    }
+    qcyx_cli::run().await
 }

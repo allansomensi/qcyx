@@ -77,39 +77,43 @@ pub fn view(app: &App) -> Element<'_, Message> {
             wired_toggle_row(
                 fl!("settings-inear-toggle-label"),
                 fl!("settings-inear-toggle-desc"),
-                app.wear_detection
-                    .map(|state| state.wear_detection)
-                    .unwrap_or(false),
+                app.wear_detection.is_some_and(|state| state.wear_detection),
                 &app.wear_detection_status,
-                Message::WearDetectionToggled,
+                // Disabled while the state is unknown: the write carries the hidden
+                // ANC-on-wear flag, which can't be preserved without a read.
+                app.wear_detection.map(|_| Message::WearDetectionToggled),
             ),
             wired_toggle_row(
                 fl!("settings-game-mode-label"),
                 fl!("settings-game-mode-desc"),
                 matches!(app.game_mode, Some(GameMode::On)),
                 &app.game_mode_status,
-                |on| Message::SetGameMode(if on { GameMode::On } else { GameMode::Off }),
+                Some(|on| Message::SetGameMode(if on { GameMode::On } else { GameMode::Off })),
             ),
             wired_toggle_row(
                 fl!("settings-sleep-mode-label"),
                 fl!("settings-sleep-mode-desc"),
                 matches!(app.sleep_mode, Some(SleepMode::On)),
                 &app.sleep_mode_status,
-                |on| Message::SetSleepMode(if on { SleepMode::On } else { SleepMode::Off }),
+                Some(|on| Message::SetSleepMode(if on { SleepMode::On } else { SleepMode::Off })),
             ),
             wired_toggle_row(
                 fl!("settings-ldac-label"),
                 fl!("settings-ldac-desc"),
                 matches!(app.ldac, Some(Ldac::On)),
                 &app.ldac_status,
-                |on| Message::SetLdac(if on { Ldac::On } else { Ldac::Off }),
+                Some(|on| Message::SetLdac(if on { Ldac::On } else { Ldac::Off })),
             ),
             wired_toggle_row(
                 fl!("settings-multipoint-label"),
                 fl!("settings-multipoint-desc"),
                 matches!(app.multipoint, Some(Multipoint::On)),
                 &app.multipoint_status,
-                |on| Message::SetMultipoint(if on { Multipoint::On } else { Multipoint::Off }),
+                Some(|on| Message::SetMultipoint(if on {
+                    Multipoint::On
+                } else {
+                    Multipoint::Off
+                })),
             ),
         ]
         .spacing(16),
@@ -380,15 +384,15 @@ fn status_line(status: &Option<String>) -> Element<'_, Message> {
 }
 
 /// A toggle row wired to a real setting — takes the current state and the
-/// message to fire on flip. Every toggle in [`view`] uses this; there are no
-/// stub/"coming soon" toggles left, since the official app has no more of
-/// them beyond what's mapped here.
+/// message to fire on flip, or `None` to render the toggle disabled. Every
+/// toggle in [`view`] uses this; there are no stub/"coming soon" toggles left,
+/// since the official app has no more of them beyond what's mapped here.
 fn wired_toggle_row<'a>(
     label: String,
     description: String,
     enabled: bool,
     status: &'a Option<String>,
-    on_toggle: impl Fn(bool) -> Message + 'static,
+    on_toggle: Option<impl Fn(bool) -> Message + 'a>,
 ) -> Element<'a, Message> {
     column![
         row![
@@ -398,7 +402,7 @@ fn wired_toggle_row<'a>(
             ]
             .spacing(2)
             .width(Length::Fill),
-            toggler(enabled).on_toggle(on_toggle),
+            toggler(enabled).on_toggle_maybe(on_toggle),
         ]
         .spacing(10)
         .align_y(Alignment::Center),
@@ -411,6 +415,22 @@ fn wired_toggle_row<'a>(
 /// Wraps a [`TouchAction`] with a localized `Display` for [`pick_list`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ActionOption(TouchAction);
+
+impl ActionOption {
+    /// Every action in menu order — a constant, so the pick lists don't
+    /// allocate on each frame.
+    const ALL: [ActionOption; TouchAction::ALL.len()] = [
+        ActionOption(TouchAction::None),
+        ActionOption(TouchAction::PlayPause),
+        ActionOption(TouchAction::Previous),
+        ActionOption(TouchAction::Next),
+        ActionOption(TouchAction::VoiceAssistant),
+        ActionOption(TouchAction::VolumeUp),
+        ActionOption(TouchAction::VolumeDown),
+        ActionOption(TouchAction::GameMode),
+        ActionOption(TouchAction::Anc),
+    ];
+}
 
 impl std::fmt::Display for ActionOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -436,12 +456,11 @@ fn touch_action_row<'a>(
     control: TouchControl,
     current: Option<TouchAction>,
 ) -> Element<'a, Message> {
-    let options: Vec<ActionOption> = TouchAction::ALL.into_iter().map(ActionOption).collect();
     let selected = current.map(ActionOption);
 
     row![
         text(label).size(13).width(Length::Fill),
-        pick_list(options, selected, move |ActionOption(action)| {
+        pick_list(ActionOption::ALL, selected, move |ActionOption(action)| {
             Message::SetTouchAction(control, action)
         })
         .width(Length::Fixed(220.0)),

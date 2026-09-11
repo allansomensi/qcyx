@@ -47,6 +47,10 @@ pub struct App {
     pub eq_status: Option<String>,
     /// Custom (per-band) equalizer gains in dB, [`qcyx_core::eq::CUSTOM_BAND_FREQS_HZ`] order.
     pub eq_custom_bands: [i16; qcyx_core::eq::CUSTOM_BAND_COUNT],
+    /// Whether `eq_custom_bands` was actually applied in this session. The
+    /// device's EQ isn't read at connect, so the default bands mean nothing
+    /// until a custom edit or a profile sets them.
+    pub eq_custom_active: bool,
     /// Channel balance (`0..=100`, `50` = centered).
     pub balance: u8,
     /// Text input for device renaming.
@@ -131,6 +135,7 @@ impl Default for App {
             eq_preset: None,
             eq_status: None,
             eq_custom_bands: [0; qcyx_core::eq::CUSTOM_BAND_COUNT],
+            eq_custom_active: false,
             balance: 50,
             rename_input: String::new(),
             rename_status: None,

@@ -3,11 +3,14 @@
 //!
 //! Everything here is plain JSON under a per-user config directory, with
 //! best-effort semantics — a missing or unreadable file just means
-//! "nothing saved yet", never a hard error the UI has to surface.
+//! "nothing saved yet", never a hard error the UI has to surface. Writes
+//! are atomic, and a file that fails to parse is moved aside instead of
+//! being overwritten by the next save.
 
-use qcyx_core::profile::Profile;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use qcyx_core::profile::{MAX_JSON_BYTES, Profile, ProfileError};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 
 /// Resolves (without creating) the QCYx config directory for the current
 /// platform. `None` only when the platform gives us no usable home/config
@@ -36,10 +39,35 @@ fn path_for(file_name: &str) -> Option<PathBuf> {
     config_dir().map(|dir| dir.join(file_name))
 }
 
-fn read_json<T: for<'de> Deserialize<'de>>(file_name: &str) -> Option<T> {
+fn read_json<T: DeserializeOwned>(file_name: &str) -> Option<T> {
     let path = path_for(file_name)?;
-    let data = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
+
+    let data = match std::fs::read(&path) {
+        Ok(data) => data,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "failed to read config file");
+            return None;
+        }
+    };
+
+    match serde_json::from_slice(&data) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            // Left in place, it would be overwritten by the next save, along
+            // with the only copy of whatever the user had saved.
+            let backup = path.with_extension("json.corrupt");
+            let moved = std::fs::rename(&path, &backup).is_ok();
+            tracing::warn!(
+                path = %path.display(),
+                backup = %backup.display(),
+                moved,
+                error = %e,
+                "config file failed to parse and was moved aside"
+            );
+            None
+        }
+    }
 }
 
 fn write_json<T: Serialize>(file_name: &str, value: &T) -> std::io::Result<()> {
@@ -51,10 +79,18 @@ fn write_json<T: Serialize>(file_name: &str, value: &T) -> std::io::Result<()> {
         std::fs::create_dir_all(dir)?;
     }
 
-    let data = serde_json::to_string_pretty(value)
-        .map_err(|e| std::io::Error::other(format!("failed to serialize: {e}")))?;
+    let data = serde_json::to_vec_pretty(value).map_err(std::io::Error::other)?;
 
-    std::fs::write(path, data)
+    // Write-then-rename: a crash mid-write leaves the previous file intact
+    // instead of a truncated one.
+    let tmp = path.with_extension("json.tmp");
+    {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(&data)?;
+        file.sync_all()?;
+    }
+
+    std::fs::rename(&tmp, &path)
 }
 
 /// Persisted app-level preferences: UI theme and language.
@@ -112,9 +148,10 @@ pub fn save_eq_profiles(profiles: &[Profile]) {
 }
 
 /// Opens a native "save file" dialog and writes `profile` to it as JSON.
-/// Blocking (uses the native file-picker APIs), so callers must run this
-/// on a blocking thread (e.g. via `tokio::task::spawn_blocking`).
-pub fn export_profile_blocking(profile: &Profile) -> Result<(), String> {
+/// `Ok(false)` means the dialog was cancelled. Blocking (uses the native
+/// file-picker APIs), so callers must run this on a blocking thread (e.g.
+/// via `tokio::task::spawn_blocking`).
+pub fn export_profile_blocking(profile: &Profile) -> Result<bool, String> {
     let json = profile.to_json().map_err(|e| e.to_string())?;
 
     let default_name = format!("{}.json", sanitize_file_name(&profile.name));
@@ -123,24 +160,45 @@ pub fn export_profile_blocking(profile: &Profile) -> Result<(), String> {
         .set_file_name(&default_name)
         .save_file()
     else {
-        return Err("export cancelled".into());
+        return Ok(false);
     };
 
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 /// Opens a native "open file" dialog and parses the chosen file as a
-/// [`Profile`]. Blocking — see [`export_profile_blocking`].
-pub fn import_profile_blocking() -> Result<Profile, String> {
+/// validated [`Profile`]. `Ok(None)` means the dialog was cancelled.
+/// Blocking — see [`export_profile_blocking`].
+pub fn import_profile_blocking() -> Result<Option<Profile>, String> {
     let Some(path) = rfd::FileDialog::new()
         .add_filter("JSON", &["json"])
         .pick_file()
     else {
-        return Err("import cancelled".into());
+        return Ok(None);
     };
 
-    let data = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    Profile::from_json(&data).map_err(|e| e.to_string())
+    let data = read_capped(&path, MAX_JSON_BYTES)?;
+    Profile::from_json(&data)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+/// Reads at most `max_bytes` from `path` as UTF-8. The cap is enforced while
+/// reading, so an arbitrarily large file is never loaded whole.
+fn read_capped(path: &Path, max_bytes: usize) -> Result<String, String> {
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+
+    let mut data = Vec::new();
+    file.take(max_bytes as u64 + 1)
+        .read_to_end(&mut data)
+        .map_err(|e| e.to_string())?;
+
+    if data.len() > max_bytes {
+        return Err(ProfileError::TooLarge.to_string());
+    }
+
+    String::from_utf8(data).map_err(|e| ProfileError::Parse(e.to_string()).to_string())
 }
 
 /// Strips characters that are awkward or illegal in file names on common
@@ -163,5 +221,24 @@ fn sanitize_file_name(name: &str) -> String {
         "profile".to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_capped_enforces_the_cap() {
+        let path =
+            std::env::temp_dir().join(format!("qcyx-read-capped-{}.json", std::process::id()));
+        std::fs::write(&path, "x".repeat(32)).unwrap();
+
+        let exact = read_capped(&path, 32);
+        let over = read_capped(&path, 31);
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(exact, Ok("x".repeat(32)));
+        assert!(over.is_err());
     }
 }

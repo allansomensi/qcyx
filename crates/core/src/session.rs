@@ -24,17 +24,14 @@ fn shared_slot() -> &'static Mutex<Option<DeviceHandle>> {
     SHARED.get_or_init(|| Mutex::new(None))
 }
 
-/// Runs an operation against the shared session, connecting first if no
-/// session is open, and drops the session whenever the operation errors.
+/// Runs a user-initiated operation against the shared session, connecting
+/// first if no session is open.
 ///
-/// Every setter/getter below used to repeat this by hand, and all but
-/// `set_anc_scene` skipped the error cleanup: a single failed write (a GATT
-/// timeout, an adapter hiccup) left a broken `DeviceHandle` sitting in the
-/// slot. Because `slot.is_some()` was the only reconnect trigger, every
-/// subsequent call reused that same dead handle and failed the same way —
-/// silently, forever — until [`watch_disconnect`](crate) or an app restart
-/// happened to clear it. Centralizing the pattern here makes that cleanup
-/// unconditional instead of something each call site has to remember.
+/// The session is dropped, and best-effort disconnected, only when the
+/// operation fails at the transport level ([`CoreError::is_transport`]). A
+/// dead handle left in the slot fails every later call the same way; a
+/// healthy one torn down over a validation or parse error forces a full
+/// scan/connect cycle for nothing.
 macro_rules! with_session {
     ($handle:ident => $body:expr) => {{
         let mut slot = shared_slot().lock().await;
@@ -46,13 +43,33 @@ macro_rules! with_session {
         let $handle = slot.as_ref().expect("just initialized above");
         let result = $body;
 
-        if result.is_err()
+        if let Err(error) = &result
+            && error.is_transport()
             && let Some(handle) = slot.take()
         {
+            tracing::debug!(%error, "dropping the shared session after a transport failure");
             let _ = handle.disconnect().await;
         }
 
         result
+    }};
+}
+
+/// Runs a background poll against the shared session, only if one is open.
+///
+/// Never connects and never drops the session. A poll that connected on its
+/// own raced `connect_poll` for the link, and a GUI state change could cancel
+/// it mid-connect — leaving the scan running and the peripheral connected
+/// with no `disconnect()`. Detecting a dead link is [`is_connected`]'s job; a
+/// failed poll only reports its own failure.
+macro_rules! with_open_session {
+    ($handle:ident => $body:expr) => {{
+        let slot = shared_slot().lock().await;
+
+        match slot.as_ref() {
+            Some($handle) => $body,
+            None => Err(CoreError::NotConnected),
+        }
     }};
 }
 
@@ -88,116 +105,67 @@ pub struct ConnectionInfo {
     pub initial_touch_actions: Option<TouchActionMap>,
 }
 
-/// Connects the shared session if it isn't already open.
+/// Connects the shared session if it isn't already open, and reads the
+/// connection-scoped device state.
+///
+/// The state is read even when the session was already open: another
+/// operation may have reconnected it first, and an empty [`ConnectionInfo`]
+/// would blank every setting in the GUI.
 pub async fn ensure_connected() -> Result<ConnectionInfo, CoreError> {
     let mut slot = shared_slot().lock().await;
 
-    if slot.is_some() {
-        return Ok(ConnectionInfo::default());
+    if slot.is_none() {
+        *slot = Some(client::connect().await?);
     }
 
-    let handle = client::connect().await?;
+    let handle = slot.as_ref().expect("just initialized above");
+    Ok(read_connection_info(handle).await)
+}
 
-    let (initial_anc_scene, initial_balance) = match handle.read_state_sync().await {
-        Ok(state) => {
-            let scene = state
-                .anc
-                .and_then(|s| AncScene::from_triplet(s.mode, s.sub_scene, s.noise_value));
-            (scene, state.balance)
-        }
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial device state");
-            (None, None)
-        }
-    };
+/// Reads everything [`ConnectionInfo`] carries. Every field is best-effort:
+/// a failed read is logged and left `None`.
+async fn read_connection_info(handle: &DeviceHandle) -> ConnectionInfo {
+    let (initial_anc_scene, initial_balance) =
+        match best_effort("device state", handle.read_state_sync().await) {
+            Some(state) => (
+                state
+                    .anc
+                    .and_then(|s| AncScene::from_triplet(s.mode, s.sub_scene, s.noise_value)),
+                state.balance,
+            ),
+            None => (None, None),
+        };
 
-    let firmware_version = match handle.read_version().await {
-        Ok(version) => Some(version),
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read firmware version");
-            None
-        }
-    };
+    let firmware_version = best_effort("firmware version", handle.read_version().await);
+    let initial_wear_detection =
+        best_effort("wear-detection state", handle.get_wear_detection().await).flatten();
+    let initial_notification_volume = best_effort(
+        "notification volume",
+        handle.get_notification_volume().await,
+    )
+    .flatten();
+    let initial_scheduled_power_off = best_effort(
+        "scheduled power-off timer",
+        handle.get_scheduled_power_off().await,
+    )
+    .flatten();
+    let initial_disconnect_power_off = best_effort(
+        "disconnect power-off timer",
+        handle.get_disconnect_power_off().await,
+    )
+    .flatten();
+    let initial_game_mode = best_effort("game-mode state", handle.get_game_mode().await).flatten();
+    let initial_sleep_mode =
+        best_effort("sleep-mode state", handle.get_sleep_mode().await).flatten();
+    let initial_ldac = best_effort("LDAC state", handle.get_ldac().await).flatten();
+    let initial_multipoint =
+        best_effort("multipoint state", handle.get_multipoint().await).flatten();
+    let initial_touch_actions = best_effort("touch-action map", handle.read_touch_actions().await);
 
-    let device_name = handle.device_name().map(str::to_string);
-
-    let initial_wear_detection = match handle.get_wear_detection().await {
-        Ok(state) => state,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial wear-detection state");
-            None
-        }
-    };
-
-    let initial_notification_volume = match handle.get_notification_volume().await {
-        Ok(level) => level,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial notification volume");
-            None
-        }
-    };
-
-    let initial_scheduled_power_off = match handle.get_scheduled_power_off().await {
-        Ok(value) => value,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial scheduled power-off timer");
-            None
-        }
-    };
-
-    let initial_disconnect_power_off = match handle.get_disconnect_power_off().await {
-        Ok(value) => value,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial disconnect power-off timer");
-            None
-        }
-    };
-
-    let initial_game_mode = match handle.get_game_mode().await {
-        Ok(state) => state,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial game-mode state");
-            None
-        }
-    };
-
-    let initial_sleep_mode = match handle.get_sleep_mode().await {
-        Ok(state) => state,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial sleep-mode state");
-            None
-        }
-    };
-
-    let initial_ldac = match handle.get_ldac().await {
-        Ok(state) => state,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial LDAC state");
-            None
-        }
-    };
-
-    let initial_multipoint = match handle.get_multipoint().await {
-        Ok(state) => state,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial multipoint state");
-            None
-        }
-    };
-
-    let initial_touch_actions = match handle.read_touch_actions().await {
-        Ok(map) => Some(map),
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to read initial touch-action map");
-            None
-        }
-    };
-
-    *slot = Some(handle);
-    Ok(ConnectionInfo {
+    ConnectionInfo {
         initial_anc_scene,
         initial_balance,
-        device_name,
+        device_name: handle.device_name().map(str::to_string),
         firmware_version,
         initial_wear_detection,
         initial_notification_volume,
@@ -208,7 +176,14 @@ pub async fn ensure_connected() -> Result<ConnectionInfo, CoreError> {
         initial_ldac,
         initial_multipoint,
         initial_touch_actions,
-    })
+    }
+}
+
+/// Logs and discards a failed connect-time read.
+fn best_effort<T>(what: &str, result: Result<T, CoreError>) -> Option<T> {
+    result
+        .inspect_err(|error| tracing::debug!(%error, "failed to read initial {what}"))
+        .ok()
 }
 
 /// Sends an ANC scene over the shared connection.
@@ -216,14 +191,16 @@ pub async fn set_anc_scene(scene: AncScene) -> Result<AncConfirmation, CoreError
     with_session!(handle => handle.send_anc_and_confirm(command::anc_scene(scene)).await)
 }
 
-/// Reads the battery status over the shared connection.
+/// Reads the battery status over an already-open shared connection.
+/// Background poll: never connects, never drops the session.
 pub async fn read_battery() -> Result<BatteryStatus, CoreError> {
-    with_session!(handle => handle.read_battery().await)
+    with_open_session!(handle => handle.read_battery().await)
 }
 
-/// Reads the live BLE signal strength (RSSI) over the shared connection.
+/// Reads the live BLE signal strength (RSSI) over an already-open shared
+/// connection. Background poll: never connects, never drops the session.
 pub async fn read_rssi() -> Result<Option<i16>, CoreError> {
-    with_session!(handle => handle.read_rssi().await)
+    with_open_session!(handle => handle.read_rssi().await)
 }
 
 /// Sends a balance write over the shared connection.
@@ -302,6 +279,11 @@ pub async fn set_eq_custom(gains_db: [i16; crate::eq::CUSTOM_BAND_COUNT]) -> Res
 }
 
 /// Returns `true` if the shared connection is open and the underlying BLE link is alive.
+///
+/// A handle that fails the check is released with a best-effort disconnect:
+/// the link may still be up at the OS level (the check itself can time out),
+/// and a connected peripheral stops advertising, so the next scan would find
+/// nothing.
 pub async fn is_connected() -> bool {
     let mut slot = shared_slot().lock().await;
 
@@ -309,13 +291,14 @@ pub async fn is_connected() -> bool {
         return false;
     };
 
-    match handle.is_connected().await {
-        Ok(true) => true,
-        _ => {
-            *slot = None;
-            false
-        }
+    if matches!(handle.is_connected().await, Ok(true)) {
+        return true;
     }
+
+    if let Some(handle) = slot.take() {
+        let _ = handle.disconnect().await;
+    }
+    false
 }
 
 /// Drops the shared connection, disconnecting from the device if one is open.

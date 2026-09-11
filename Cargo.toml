@@ -11,6 +11,7 @@ categories = ["command-line-utilities", "multimedia::audio", "hardware-support"]
 license = "MIT"
 exclude = ["/.github/", "/pkg/"]
 edition = "2024"
+rust-version = "1.90"
 
 [workspace]
 members = [

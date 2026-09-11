@@ -41,4 +41,5 @@ pub fn run() -> iced::Result {
         .resizable(true)
         .antialiasing(true)
         .run()
+        .inspect_err(|err| tracing::error!(%err, "GUI exited with an error"))
 }

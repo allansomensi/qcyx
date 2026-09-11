@@ -7,10 +7,11 @@
 use qcyx_core::profile::Profile;
 
 /// The label to display for a profile's name.
+///
+/// Reserved names can't be saved or imported, so the lookup only ever runs
+/// for built-in keys. Allocation-free check: this runs per row, per frame.
 pub fn profile_label(name: &str) -> String {
-    let is_built_in = Profile::built_in().iter().any(|p| p.name == name);
-
-    if is_built_in {
+    if Profile::is_reserved_name(name) && qcyx_i18n::LANGUAGE_LOADER.has(name) {
         qcyx_i18n::LANGUAGE_LOADER.get(name)
     } else {
         name.to_string()

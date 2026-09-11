@@ -6,10 +6,13 @@ use crate::protocol::Command;
 /// Opcode for channel balance (read and write).
 pub const OPCODE: u8 = 0x16;
 
+/// Largest balance value: full right.
+pub const MAX_VALUE: u8 = 100;
+
 /// Builds the balance-set write command.
-/// `value` is clamped to `0..=100` (0: full left, 100: full right, 50: centered).
+/// `value` is clamped to `0..=`[`MAX_VALUE`] (0: full left, 100: full right, 50: centered).
 pub fn set_balance(value: u8) -> Command {
-    Command::new(OPCODE, vec![value.min(100)])
+    Command::new(OPCODE, vec![value.min(MAX_VALUE)])
 }
 
 /// Parses a balance value from the payload.

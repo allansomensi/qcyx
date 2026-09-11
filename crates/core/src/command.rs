@@ -13,6 +13,12 @@ pub mod opcode {
     pub const ANC_RESULT: u8 = 0x28;
 }
 
+/// Lowest wire-confirmed level for [`TransparencyMode::AmbientSound`].
+pub const AMBIENT_LEVEL_MIN: u8 = 1;
+
+/// Highest wire-confirmed level for [`TransparencyMode::AmbientSound`].
+pub const AMBIENT_LEVEL_MAX: u8 = 6;
+
 /// A three-level intensity setting used by several [`NoiseCancellingMode`] variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NcLevel {
@@ -54,7 +60,9 @@ pub enum NoiseCancellingMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransparencyMode {
     VocalEnhancement,
-    /// Ambient sound passthrough. Valid `level` range is `1..=6`.
+    /// Ambient sound passthrough. Valid `level` range is
+    /// [`AMBIENT_LEVEL_MIN`]`..=`[`AMBIENT_LEVEL_MAX`]; [`anc_scene`] clamps
+    /// anything outside it.
     AmbientSound {
         level: u8,
     },
@@ -72,6 +80,16 @@ pub enum AncScene {
 }
 
 impl AncScene {
+    /// `false` for an ambient-sound level outside the wire-confirmed range.
+    pub fn is_valid(self) -> bool {
+        match self {
+            AncScene::Transparency(TransparencyMode::AmbientSound { level }) => {
+                (AMBIENT_LEVEL_MIN..=AMBIENT_LEVEL_MAX).contains(&level)
+            }
+            _ => true,
+        }
+    }
+
     /// Returns the `(mode, sub_scene, noise_value)` triplet for this scene.
     pub const fn triplet(self) -> (u8, u8, u8) {
         match self {
@@ -126,8 +144,17 @@ impl AncScene {
 }
 
 /// Builds the ANC-setting write command for a given [`AncScene`].
+///
+/// An ambient-sound level outside the wire-confirmed range is clamped into
+/// it, so no unconfirmed value reaches the firmware.
 pub fn anc_scene(scene: AncScene) -> Command {
-    let (mode, sub_scene, noise_value) = scene.triplet();
+    let (mode, sub_scene, mut noise_value) = scene.triplet();
+    if matches!(
+        scene,
+        AncScene::Transparency(TransparencyMode::AmbientSound { .. })
+    ) {
+        noise_value = noise_value.clamp(AMBIENT_LEVEL_MIN, AMBIENT_LEVEL_MAX);
+    }
     Command::new(opcode::ANC_SETTING, vec![mode, sub_scene, noise_value])
 }
 
@@ -210,5 +237,27 @@ mod tests {
     fn from_triplet_rejects_unknown_values() {
         assert_eq!(AncScene::from_triplet(0x00, 0x00, 0x00), None);
         assert_eq!(AncScene::from_triplet(0xFF, 0xFF, 0xFF), None);
+    }
+
+    #[test]
+    fn anc_scene_clamps_ambient_level_to_the_confirmed_range() {
+        let build = |level| {
+            anc_scene(AncScene::Transparency(TransparencyMode::AmbientSound {
+                level,
+            }))
+            .parameters
+        };
+        assert_eq!(build(0), vec![0x03, 0x01, AMBIENT_LEVEL_MIN]);
+        assert_eq!(build(200), vec![0x03, 0x01, AMBIENT_LEVEL_MAX]);
+    }
+
+    #[test]
+    fn is_valid_rejects_out_of_range_ambient_levels() {
+        let ambient = |level| AncScene::Transparency(TransparencyMode::AmbientSound { level });
+        assert!(ambient(AMBIENT_LEVEL_MIN).is_valid());
+        assert!(ambient(AMBIENT_LEVEL_MAX).is_valid());
+        assert!(!ambient(0).is_valid());
+        assert!(!ambient(AMBIENT_LEVEL_MAX + 1).is_valid());
+        assert!(AncScene::Normal.is_valid());
     }
 }

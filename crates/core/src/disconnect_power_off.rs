@@ -15,6 +15,14 @@ pub const OPCODE: u8 = 0x1F;
 /// Sentinel `u16` value meaning "never power off".
 pub const NEVER: u16 = 0xFFFF;
 
+/// Smallest value accepted from user input; `0` was never observed on the
+/// wire.
+pub const MIN_MINUTES: u16 = 1;
+
+/// Largest value accepted from user input: [`NEVER`] itself would silently
+/// disable the timer.
+pub const MAX_MINUTES: u16 = NEVER - 1;
+
 /// The device's default on first connect, before any user change.
 pub const DEFAULT_MINUTES: u16 = 5;
 
@@ -103,5 +111,14 @@ mod tests {
     #[test]
     fn rejects_short_payload() {
         assert_eq!(parse_disconnect_power_off(&[0x05]), None);
+    }
+
+    #[test]
+    fn max_minutes_stays_clear_of_the_never_sentinel() {
+        let cmd = set_disconnect_power_off(DisconnectPowerOff::Minutes(MAX_MINUTES));
+        assert_eq!(
+            parse_disconnect_power_off(&cmd.parameters),
+            Some(DisconnectPowerOff::Minutes(MAX_MINUTES))
+        );
     }
 }

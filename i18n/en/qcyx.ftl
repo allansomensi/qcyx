@@ -1,4 +1,5 @@
 cli-welcome = Starting QCYx Bluetooth Manager...
+cli-error = Error: {$error}
 
 core-connecting = Connecting to device...
 core-connected = Connected!
@@ -10,11 +11,13 @@ error-device-not-found = No QCY devices found. Make sure they are out of the cas
 error-service-not-found = QCY GATT service not found on device.
 error-connection-dropped = Connected, then the device immediately dropped the link. This usually means it isn't BLE-paired with Windows yet — go to Settings > Bluetooth & devices and pair it there (this is separate from the audio pairing you already did), then try again.
 error-operation-timeout = The Bluetooth stack stopped responding, so the operation was abandoned. Reconnect and try again.
+error-connection-dropped-generic = Connected, then the device immediately dropped the link. Make sure the earbuds are out of the case and within range, then try again.
+error-not-connected = Not connected to the device.
 
 cli-anc-set = ANC scene set — mode: {$mode}, sub-scene: {$sub_scene}, noise value: {$noise_value}
 cli-anc-unconfirmed = ANC command sent, but the device did not confirm it — it may not have applied.
 cli-anc-timeout = ANC command sent, but no confirmation arrived in time — it may not have applied.
-cli-anc-echoed = ANC scene accepted by the device (echo received); waiting for final confirmation...
+cli-anc-echoed = ANC scene accepted by the device (echo received), but the final confirmation didn't arrive in time.
 
 cli-battery-title = Battery status:
 battery-left = Left earbud
@@ -52,18 +55,16 @@ cli-touch-action-set = Touch action set.
 
 waiting-title = Waiting for device...
 waiting-subtitle = Make sure your earbuds are nearby and out of the case.
-connected-header = Connected
 error-title = Connection Error
 error-unknown = Unknown error
 
-gui-anc-title = Noise Control
 gui-anc-normal = Normal
 gui-anc-transparency = Transparency
 gui-anc-hint = Choose a mode to apply it to your earbuds.
 gui-anc-applied = ANC scene applied.
 gui-anc-unconfirmed = ANC command sent, but the device did not confirm it — it may not have applied.
 gui-anc-timeout = ANC command sent, but no confirmation arrived in time — it may not have applied.
-gui-anc-echoed = ANC scene accepted by the device (echo received); waiting for final confirmation...
+gui-anc-echoed = ANC scene accepted by the device (echo received), but the final confirmation didn't arrive in time.
 gui-anc-error = Failed to set ANC scene: {$error}
 gui-balance-error = Failed to set channel balance: {$error}
 gui-retry = Retry
@@ -94,7 +95,6 @@ home-firmware-unknown = Unknown
 home-battery-title = Battery
 home-battery-left = Left Earbud
 home-battery-right = Right Earbud
-home-battery-case = Case
 home-battery-stale = Last reading may be outdated
 home-quick-actions-title = Quick actions
 home-action-find-device = Find my earbuds
@@ -107,7 +107,6 @@ home-status-idle = Idle
 # ANC tab
 anc-title = Noise Control
 anc-subtitle = Choose a mode to apply it to your earbuds.
-anc-noise-cancelling = Noise Cancelling
 anc-active = Active
 
 anc-transparency-detail-title = Transparency
@@ -262,6 +261,12 @@ profiles-export-done = Profile exported.
 profiles-export-error = Failed to export profile: {$error}
 profiles-import-done = Profile "{$name}" imported.
 profiles-import-error = Failed to import profile: {$error}
+profile-error-parse = The file is not a valid QCYx profile: {$reason}
+profile-error-too-large = The file is too large to be a QCYx profile.
+profile-error-name = The profile name is empty or reserved.
+profile-error-empty = The profile contains no settings.
+profile-error-eq-conflict = The profile sets both an equalizer preset and a custom curve.
+profile-error-out-of-range = The profile has an out-of-range value in "{$field}".
 
 built-in-focus = Focus
 built-in-calls = Calls

@@ -57,12 +57,17 @@ Full detail in [error-recovery.md](./error-recovery.md).
 
 ---
 
+## BlueZ `mtu()` Panic
+
+`btleplug` 0.13's BlueZ backend unwraps the characteristic MTU inside `Peripheral::mtu()`, and older bluetoothd releases don't expose it — the call panics there, which aborts release builds (`panic = "abort"`). `DeviceHandle::write_type_for` only calls `mtu()` for payloads larger than the spec-minimum ATT payload (20 bytes), so every command except the EQ table and a long rename avoids it. The remaining exposure needs an upstream fix.
+
+---
+
 ## Roadmap / Open Questions
 
 - **Opcode `0x3B` (Music Info)** — referenced in third-party repos, not captured.
 - **`color_index` field** — referenced in advertisement-parsing code, not confirmed.
 - **`Event::Alarms` / `Event::AncWear` decoders** — planned, pending capture.
-- **Custom (per-band) EQ editing** — not implemented; see [eq.md](./eq.md#the-142-byte-table).
 - **`CMDID_MOREDEVICE` (`0x24`, dual-device connection)** — writes `24 01 01` / `24 01 02` observed outside a documented action sequence. Unverified lead, not a confirmed feature.
 - **CLI/GUI connection duplication on Windows** — the CLI opens its own BLE connection independent of any existing OS audio connection, which can make the device appear as two separate profiles in the OS device list. Understood as a platform constraint, not fixable purely in this crate.
 

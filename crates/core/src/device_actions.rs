@@ -31,21 +31,25 @@ pub fn factory_reset() -> Command {
 pub const MAX_NAME_BYTES: usize = 32;
 
 /// Sanitizes and truncates a name exactly as it will be written to the
-/// device: trimmed, stripped of control characters, and cut at a char
-/// boundary to [`MAX_NAME_BYTES`].
+/// device: stripped of control characters, trimmed, and cut at a char
+/// boundary to [`MAX_NAME_BYTES`], with any whitespace the cut exposes
+/// trimmed too. Idempotent.
 ///
 /// Exposed so callers (the CLI in particular, which takes a raw `String`
 /// with no input mask) can validate or display the name that will actually
 /// reach the device, rather than the untouched argument the user typed.
 pub fn sanitize(name: &str) -> String {
-    let sanitized: String = name.trim().chars().filter(|c| !c.is_control()).collect();
+    // Stripping first: a control character next to a space would otherwise
+    // shield that space from the trim.
+    let stripped: String = name.chars().filter(|c| !c.is_control()).collect();
+    let trimmed = stripped.trim();
 
-    let mut end = sanitized.len().min(MAX_NAME_BYTES);
-    while !sanitized.is_char_boundary(end) {
+    let mut end = trimmed.len().min(MAX_NAME_BYTES);
+    while !trimmed.is_char_boundary(end) {
         end -= 1;
     }
 
-    sanitized[..end].to_string()
+    trimmed[..end].trim_end().to_string()
 }
 
 /// Builds the device-rename write command.
@@ -114,5 +118,31 @@ mod tests {
         assert!(set_name("   ").parameters.is_empty());
         assert!(set_name("\u{0}\u{1}\n\t").parameters.is_empty());
         assert!(set_name("").parameters.is_empty());
+    }
+
+    #[test]
+    fn strips_control_characters_before_trimming() {
+        assert_eq!(sanitize("\u{0} QCY \u{7}"), "QCY");
+    }
+
+    #[test]
+    fn truncation_leaves_no_trailing_whitespace() {
+        let name = format!("{} b", "a".repeat(MAX_NAME_BYTES - 1));
+        assert_eq!(sanitize(&name), "a".repeat(MAX_NAME_BYTES - 1));
+    }
+
+    #[test]
+    fn sanitize_is_idempotent() {
+        let multibyte = "ç".repeat(17);
+        let cut_at_space = format!("{} b", "a".repeat(MAX_NAME_BYTES - 1));
+        for name in [
+            "\u{0} QCY",
+            "  Melo\nBuds  ",
+            multibyte.as_str(),
+            cut_at_space.as_str(),
+        ] {
+            let once = sanitize(name);
+            assert_eq!(sanitize(&once), once);
+        }
     }
 }

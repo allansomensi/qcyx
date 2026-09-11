@@ -2,11 +2,11 @@ use crate::message::ProfileScope;
 use crate::{app::App, message::Message, state::AppState};
 use iced::Task;
 use qcyx_core::client::AncConfirmation;
-use qcyx_core::command::{AncScene, TransparencyMode};
+use qcyx_core::command::{AMBIENT_LEVEL_MAX, AMBIENT_LEVEL_MIN, AncScene, TransparencyMode};
 use qcyx_core::profile::Profile;
-use qcyx_core::scheduled_power_off::ScheduledPowerOff;
+use qcyx_core::scheduled_power_off::{self, ScheduledPowerOff};
 use qcyx_core::session;
-use qcyx_core::touch_action::TouchControl;
+use qcyx_core::touch_action::{TouchActionMap, TouchControl};
 use qcyx_core::wear_detection::WearDetection;
 use qcyx_i18n::fl;
 use tracing::{debug, error, info};
@@ -25,11 +25,9 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             );
             app.state = AppState::Connected;
             app.error_log = None;
-            app.active_scene = info.initial_anc_scene;
-            if let Some(AncScene::Transparency(TransparencyMode::AmbientSound { level })) =
-                info.initial_anc_scene
-            {
-                app.transparency_level = level;
+            app.active_scene = None;
+            if let Some(scene) = info.initial_anc_scene {
+                set_active_scene(app, scene);
             }
             app.balance = info.initial_balance.unwrap_or(50);
             app.rename_input = info.device_name.clone().unwrap_or_default();
@@ -87,6 +85,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             app.transparency_level = 1;
             app.eq_preset = None;
             app.eq_status = None;
+            app.eq_custom_active = false;
             app.balance = 50;
             app.rename_input = String::new();
             app.rename_status = None;
@@ -156,14 +155,14 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             match result {
                 Ok(AncConfirmation::Applied) => {
                     info!("ANC scene applied: {scene:?}");
-                    app.active_scene = Some(scene);
+                    set_active_scene(app, scene);
                     app.status_log = Some(fl!("gui-anc-applied"));
                 }
                 Ok(AncConfirmation::Rejected) => {
                     app.status_log = Some(fl!("gui-anc-unconfirmed"));
                 }
                 Ok(AncConfirmation::EchoedOnly) => {
-                    app.active_scene = Some(scene);
+                    set_active_scene(app, scene);
                     app.status_log = Some(fl!("gui-anc-echoed"));
                 }
                 Ok(AncConfirmation::NoResponse) => {
@@ -218,7 +217,9 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                 // stays enabled until the write actually succeeds
                 // (RenameResult flips rename_editing back off), so a failed
                 // write leaves the user able to correct and retry.
-                let name = app.rename_input.trim().to_string();
+                // Checked on the form the device would receive: a name that
+                // sanitizes to nothing is rejected by the core anyway.
+                let name = qcyx_core::device_actions::sanitize(&app.rename_input);
                 if name.is_empty() {
                     return Task::none();
                 }
@@ -312,6 +313,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         Message::SetEqPreset(preset) => {
             info!("Requesting EQ preset: {preset:?}");
             app.eq_preset = Some(preset);
+            app.eq_custom_active = false;
             app.eq_status = None;
             Task::perform(
                 async move {
@@ -348,6 +350,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             // A custom edit deselects any built-in preset chip — the device
             // is no longer on one of the 7 named curves.
             app.eq_preset = None;
+            app.eq_custom_active = true;
             app.eq_status = None;
             let bands = app.eq_custom_bands;
             Task::perform(
@@ -362,6 +365,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         Message::EqCustomReset => {
             app.eq_custom_bands = [0; qcyx_core::eq::CUSTOM_BAND_COUNT];
             app.eq_preset = None;
+            app.eq_custom_active = true;
             app.eq_status = None;
             Task::perform(
                 async move {
@@ -386,13 +390,16 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::WearDetectionToggled(enabled) => {
-            // Preserves the ANC-on-wear sub-flag, which this toggle doesn't
-            // expose — defaults to on, matching the device's own
-            // connect-time default when no read has happened yet.
-            let anc_on_wear = app.wear_detection.map(|s| s.anc_on_wear).unwrap_or(true);
+            // The write carries the ANC-on-wear sub-flag too, which this
+            // toggle doesn't expose. With the state unknown there is nothing
+            // to preserve, and guessing would overwrite the device's value —
+            // the toggle is disabled in that case (see settings.rs).
+            let Some(current) = app.wear_detection else {
+                return Task::none();
+            };
             let new_state = WearDetection {
                 wear_detection: enabled,
-                anc_on_wear,
+                anc_on_wear: current.anc_on_wear,
             };
             app.wear_detection = Some(new_state);
             app.wear_detection_status = None;
@@ -478,7 +485,16 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::ScheduledPowerOffCustomSubmit => {
-            let Ok(minutes) = app.scheduled_power_off_custom_input.trim().parse::<u16>() else {
+            let Some(minutes) = app
+                .scheduled_power_off_custom_input
+                .trim()
+                .parse::<u16>()
+                .ok()
+                .filter(|minutes| {
+                    (scheduled_power_off::MIN_MINUTES..=scheduled_power_off::MAX_MINUTES)
+                        .contains(minutes)
+                })
+            else {
                 return Task::none();
             };
             let value = ScheduledPowerOff::Minutes(minutes);
@@ -608,15 +624,18 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SetTouchAction(control, action) => {
             info!("Requesting touch action: {control:?} -> {action:?}");
-            if let Some(map) = app.touch_actions.as_mut() {
-                match control {
-                    TouchControl::LeftSingle => map.left_single = Some(action),
-                    TouchControl::RightSingle => map.right_single = Some(action),
-                    TouchControl::LeftDouble => map.left_double = Some(action),
-                    TouchControl::RightDouble => map.right_double = Some(action),
-                    TouchControl::LeftTriple => map.left_triple = Some(action),
-                    TouchControl::RightTriple => map.right_triple = Some(action),
-                }
+            // Inserted when the connect-time read failed, so the choice still
+            // shows once written.
+            let map = app
+                .touch_actions
+                .get_or_insert_with(TouchActionMap::default);
+            match control {
+                TouchControl::LeftSingle => map.left_single = Some(action),
+                TouchControl::RightSingle => map.right_single = Some(action),
+                TouchControl::LeftDouble => map.left_double = Some(action),
+                TouchControl::RightDouble => map.right_double = Some(action),
+                TouchControl::LeftTriple => map.left_triple = Some(action),
+                TouchControl::RightTriple => map.right_triple = Some(action),
             }
             app.touch_actions_status = None;
             Task::perform(
@@ -654,20 +673,41 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::ApplyProfile(scope, profile) => {
+            // EQ profiles apply only EQ, whatever an older saved file carries.
+            let profile = match scope {
+                ProfileScope::Full => profile,
+                ProfileScope::Eq => profile.eq_only(),
+            };
+
+            // Saved files may predate validation: nothing out of range may
+            // reach the device.
+            if let Err(e) = profile.validate_settings() {
+                let status = match scope {
+                    ProfileScope::Full => fl!("profiles-apply-error", error = e.to_string()),
+                    ProfileScope::Eq => fl!("eq-profiles-apply-error", error = e.to_string()),
+                };
+                set_profiles_status(app, scope, Some(status));
+                return Task::none();
+            }
+
+            // An in-flight ANC change would land after the profile's and
+            // leave the UI showing the wrong scene.
+            if profile.anc_scene.is_some() && app.pending_scene.is_some() {
+                return Task::none();
+            }
+
             info!("Applying profile ({scope:?}): {}", profile.name);
 
             if let Some(scene) = profile.anc_scene {
-                app.active_scene = Some(scene);
-                app.pending_scene = None;
-                if let AncScene::Transparency(TransparencyMode::AmbientSound { level }) = scene {
-                    app.transparency_level = level;
-                }
+                set_active_scene(app, scene);
             }
             if let Some(bands) = profile.eq_custom {
                 app.eq_custom_bands = bands;
                 app.eq_preset = None;
+                app.eq_custom_active = true;
             } else if let Some(preset) = profile.eq_preset {
                 app.eq_preset = Some(preset);
+                app.eq_custom_active = false;
             }
             if let Some(balance) = profile.balance {
                 app.balance = balance;
@@ -719,39 +759,43 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::SaveCurrentAsProfile(scope) => {
+            let custom_eq = current_custom_eq(app);
+            let profile = match scope {
+                ProfileScope::Full => Profile::from_current(
+                    Profile::sanitize_name(&app.new_profile_name),
+                    app.active_scene,
+                    app.eq_preset,
+                    custom_eq,
+                    Some(app.balance),
+                    app.notification_volume,
+                    app.game_mode,
+                ),
+                ProfileScope::Eq => Profile::from_current_eq(
+                    Profile::sanitize_name(&app.new_eq_profile_name),
+                    app.eq_preset,
+                    custom_eq,
+                ),
+            };
+
+            if let Err(e) = profile.validate() {
+                set_profiles_status(app, scope, Some(e.to_string()));
+                return Task::none();
+            }
+
+            let name = profile.name.clone();
             match scope {
                 ProfileScope::Full => {
-                    let name = app.new_profile_name.trim().to_string();
-                    if name.is_empty() {
-                        return Task::none();
-                    }
-                    let custom_eq = app.eq_preset.is_none().then_some(app.eq_custom_bands);
-                    let profile = Profile::from_current(
-                        name.clone(),
-                        app.active_scene,
-                        app.eq_preset,
-                        custom_eq,
-                        Some(app.balance),
-                        app.notification_volume,
-                        app.game_mode,
-                    );
                     app.profiles.retain(|p| p.name != name);
                     app.profiles.push(profile);
                     crate::store::save_profiles(&app.profiles);
-                    app.new_profile_name = String::new();
+                    app.new_profile_name.clear();
                     app.profiles_status = Some(fl!("profiles-saved", name = name));
                 }
                 ProfileScope::Eq => {
-                    let name = app.new_eq_profile_name.trim().to_string();
-                    if name.is_empty() {
-                        return Task::none();
-                    }
-                    let custom_eq = app.eq_preset.is_none().then_some(app.eq_custom_bands);
-                    let profile = Profile::from_current_eq(name.clone(), app.eq_preset, custom_eq);
                     app.eq_profiles.retain(|p| p.name != name);
                     app.eq_profiles.push(profile);
                     crate::store::save_eq_profiles(&app.eq_profiles);
-                    app.new_eq_profile_name = String::new();
+                    app.new_eq_profile_name.clear();
                     app.eq_profiles_status = Some(fl!("eq-profiles-saved", name = name));
                 }
             }
@@ -773,23 +817,33 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-        Message::ExportProfile(scope, profile) => Task::perform(
-            async move {
-                tokio::task::spawn_blocking(move || crate::store::export_profile_blocking(&profile))
+        Message::ExportProfile(scope, mut profile) => {
+            if profile.built_in {
+                // A built-in's name is a translation key: export the label
+                // the user sees, as a regular profile.
+                profile.name = crate::localize::profile_label(&profile.name);
+                profile.built_in = false;
+            }
+
+            Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        crate::store::export_profile_blocking(&profile)
+                    })
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
-            },
-            move |result| Message::ExportProfileResult(scope, result),
-        ),
+                },
+                move |result| Message::ExportProfileResult(scope, result),
+            )
+        }
         Message::ExportProfileResult(scope, result) => {
-            let status = Some(match result {
-                Ok(()) => fl!("profiles-export-done"),
+            let status = match result {
+                Ok(true) => fl!("profiles-export-done"),
+                // Dialog cancelled: nothing happened, nothing to report.
+                Ok(false) => return Task::none(),
                 Err(e) => fl!("profiles-export-error", error = e),
-            });
-            match scope {
-                ProfileScope::Full => app.profiles_status = status,
-                ProfileScope::Eq => app.eq_profiles_status = status,
-            }
+            };
+            set_profiles_status(app, scope, Some(status));
             Task::none()
         }
         Message::ImportProfile(scope) => Task::perform(
@@ -801,31 +855,37 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             move |result| Message::ImportProfileResult(scope, result),
         ),
         Message::ImportProfileResult(scope, result) => {
-            match result {
-                Ok(profile) => {
-                    let name = profile.name.clone();
-                    match scope {
-                        ProfileScope::Full => {
-                            app.profiles.retain(|p| p.name != name);
-                            app.profiles.push(profile);
-                            crate::store::save_profiles(&app.profiles);
-                            app.profiles_status = Some(fl!("profiles-import-done", name = name));
-                        }
-                        ProfileScope::Eq => {
-                            app.eq_profiles.retain(|p| p.name != name);
-                            app.eq_profiles.push(profile);
-                            crate::store::save_eq_profiles(&app.eq_profiles);
-                            app.eq_profiles_status =
-                                Some(fl!("eq-profiles-import-done", name = name));
-                        }
-                    }
-                }
+            let profile = match result {
+                Ok(Some(profile)) => profile,
+                Ok(None) => return Task::none(),
                 Err(e) => {
-                    let status = Some(fl!("profiles-import-error", error = e));
-                    match scope {
-                        ProfileScope::Full => app.profiles_status = status,
-                        ProfileScope::Eq => app.eq_profiles_status = status,
+                    let status = fl!("profiles-import-error", error = e);
+                    set_profiles_status(app, scope, Some(status));
+                    return Task::none();
+                }
+            };
+
+            let name = profile.name.clone();
+            match scope {
+                ProfileScope::Full => {
+                    app.profiles.retain(|p| p.name != name);
+                    app.profiles.push(profile);
+                    crate::store::save_profiles(&app.profiles);
+                    app.profiles_status = Some(fl!("profiles-import-done", name = name));
+                }
+                ProfileScope::Eq => {
+                    // The EQ library holds EQ only: a full-device file keeps
+                    // its EQ and nothing else.
+                    let profile = profile.eq_only();
+                    if let Err(e) = profile.validate() {
+                        app.eq_profiles_status =
+                            Some(fl!("profiles-import-error", error = e.to_string()));
+                        return Task::none();
                     }
+                    app.eq_profiles.retain(|p| p.name != name);
+                    app.eq_profiles.push(profile);
+                    crate::store::save_eq_profiles(&app.eq_profiles);
+                    app.eq_profiles_status = Some(fl!("eq-profiles-import-done", name = name));
                 }
             }
             Task::none()
@@ -845,10 +905,16 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
 /// apply path as a full-device one.
 async fn apply_profile_to_device(profile: Profile) -> Result<(), String> {
     if let Some(scene) = profile.anc_scene {
-        session::set_anc_scene(scene)
+        // Same reading as the ANC tab: an echo counts as applied; a rejection
+        // or silence fails the profile instead of reporting success.
+        match session::set_anc_scene(scene)
             .await
-            .map(|_: AncConfirmation| ())
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())?
+        {
+            AncConfirmation::Applied | AncConfirmation::EchoedOnly => {}
+            AncConfirmation::Rejected => return Err(fl!("gui-anc-unconfirmed")),
+            AncConfirmation::NoResponse => return Err(fl!("gui-anc-timeout")),
+        }
     }
     if let Some(bands) = profile.eq_custom {
         session::set_eq_custom(bands)
@@ -875,4 +941,26 @@ async fn apply_profile_to_device(profile: Profile) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Records `scene` as active, keeping the ambient-level slider in step.
+fn set_active_scene(app: &mut App, scene: AncScene) {
+    app.active_scene = Some(scene);
+    if let AncScene::Transparency(TransparencyMode::AmbientSound { level }) = scene {
+        app.transparency_level = level.clamp(AMBIENT_LEVEL_MIN, AMBIENT_LEVEL_MAX);
+    }
+}
+
+/// The custom curve to capture in a profile: only one actually applied in
+/// this session. The device's EQ isn't read at connect, so the default flat
+/// bands would otherwise be saved as if they were active.
+fn current_custom_eq(app: &App) -> Option<[i16; qcyx_core::eq::CUSTOM_BAND_COUNT]> {
+    (app.eq_custom_active && app.eq_preset.is_none()).then_some(app.eq_custom_bands)
+}
+
+fn set_profiles_status(app: &mut App, scope: ProfileScope, status: Option<String>) {
+    match scope {
+        ProfileScope::Full => app.profiles_status = status,
+        ProfileScope::Eq => app.eq_profiles_status = status,
+    }
 }

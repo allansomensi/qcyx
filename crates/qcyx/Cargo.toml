@@ -3,6 +3,7 @@ name = "qcyx"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 repository.workspace = true
 description.workspace = true
 license.workspace = true
