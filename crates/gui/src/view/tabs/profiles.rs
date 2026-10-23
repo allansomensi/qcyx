@@ -27,7 +27,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
                     .map(|profile| {
                         let is_active =
                             app.active_profile.as_deref() == Some(profile.name.as_str());
-                        profile_row(profile, true, is_active)
+                        let supported = is_supported(app, &profile);
+                        profile_row(profile, true, is_active, supported)
                     })
                     .collect::<Vec<_>>()
             )
@@ -59,7 +60,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
                         .map(|profile| {
                             let is_active =
                                 app.active_profile.as_deref() == Some(profile.name.as_str());
-                            profile_row(profile, false, is_active)
+                            let supported = is_supported(app, &profile);
+                            profile_row(profile, false, is_active, supported)
                         })
                         .collect::<Vec<_>>(),
                 )
@@ -109,9 +111,23 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .into()
 }
 
+/// Whether the connected model accepts every setting `profile` writes. The
+/// apply path rejects the rest anyway; this only keeps the button honest.
+fn is_supported(app: &App, profile: &Profile) -> bool {
+    profile
+        .anc_scene
+        .is_none_or(|scene| app.capabilities.supports_anc_scene(scene))
+}
+
 /// One profile row: icon + name, plus Apply/Export/Delete actions.
 /// Built-in profiles have no Delete action and use a representative icon.
-fn profile_row(profile: Profile, built_in: bool, is_active: bool) -> Element<'static, Message> {
+/// An unsupported profile keeps its row, with Apply disabled and a note.
+fn profile_row(
+    profile: Profile,
+    built_in: bool,
+    is_active: bool,
+    supported: bool,
+) -> Element<'static, Message> {
     let icon = if built_in {
         built_in_icon(&profile.name)
     } else {
@@ -129,24 +145,30 @@ fn profile_row(profile: Profile, built_in: bool, is_active: bool) -> Element<'st
                 .on_press(Message::ClearActiveProfile),
         );
     } else {
-        actions = actions.push(
-            button(text(fl!("profiles-apply-button")).size(12))
-                .padding([6, 12])
-                .style(move |theme: &Theme, _status| {
-                    let ext = theme.extended_palette();
-                    iced::widget::button::Style {
-                        background: Some(ext.primary.weak.color.scale_alpha(0.25).into()),
-                        text_color: ext.primary.strong.color,
-                        border: iced::Border {
-                            color: ext.primary.strong.color,
-                            width: 1.0,
-                            radius: 14.0.into(),
-                        },
-                        ..Default::default()
-                    }
-                })
-                .on_press(Message::ApplyProfile(ProfileScope::Full, profile.clone())),
-        );
+        let apply = button(text(fl!("profiles-apply-button")).size(12))
+            .padding([6, 12])
+            .style(move |theme: &Theme, status| {
+                let ext = theme.extended_palette();
+                let alpha = if status == iced::widget::button::Status::Disabled {
+                    0.4
+                } else {
+                    1.0
+                };
+                iced::widget::button::Style {
+                    background: Some(ext.primary.weak.color.scale_alpha(0.25 * alpha).into()),
+                    text_color: ext.primary.strong.color.scale_alpha(alpha),
+                    border: iced::Border {
+                        color: ext.primary.strong.color.scale_alpha(alpha),
+                        width: 1.0,
+                        radius: 14.0.into(),
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press_maybe(
+                supported.then(|| Message::ApplyProfile(ProfileScope::Full, profile.clone())),
+            );
+        actions = actions.push(apply);
     }
 
     actions = actions.push(
@@ -168,7 +190,7 @@ fn profile_row(profile: Profile, built_in: bool, is_active: bool) -> Element<'st
 
     card::tile(
         row![
-            row![text(icon).size(16), text(label).size(14)]
+            row![text(icon).size(16), profile_title(label, supported)]
                 .spacing(10)
                 .align_y(Alignment::Center)
                 .width(Length::Fill),
@@ -177,6 +199,21 @@ fn profile_row(profile: Profile, built_in: bool, is_active: bool) -> Element<'st
         .spacing(10)
         .align_y(Alignment::Center),
     )
+}
+
+fn profile_title(label: String, supported: bool) -> Element<'static, Message> {
+    if supported {
+        return text(label).size(14).into();
+    }
+
+    column![
+        text(label).size(14),
+        text(fl!("feature-not-supported-model"))
+            .size(11)
+            .style(text::secondary),
+    ]
+    .spacing(2)
+    .into()
 }
 
 /// The non-interactive "Ativo" pill — a plain status indicator, not a

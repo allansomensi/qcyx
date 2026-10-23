@@ -6,7 +6,7 @@ use qcyx_core::command::{AMBIENT_LEVEL_MAX, AMBIENT_LEVEL_MIN, AncScene, Transpa
 use qcyx_core::profile::Profile;
 use qcyx_core::scheduled_power_off::{self, ScheduledPowerOff};
 use qcyx_core::session;
-use qcyx_core::touch_action::{TouchActionMap, TouchControl};
+use qcyx_core::touch_action::{TouchAction, TouchActionMap, TouchControl};
 use qcyx_core::wear_detection::WearDetection;
 use qcyx_i18n::fl;
 use tracing::{debug, error, info};
@@ -407,6 +407,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                 wear_detection: enabled,
                 anc_on_wear: current.anc_on_wear,
             };
+            let previous = app.wear_detection;
             app.wear_detection = Some(new_state);
             app.wear_detection_status = None;
             Task::perform(
@@ -415,15 +416,16 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::WearDetectionResult(new_state, result),
+                move |result| Message::WearDetectionResult(new_state, previous, result),
             )
         }
-        Message::WearDetectionResult(state, result) => {
+        Message::WearDetectionResult(state, previous, result) => {
             match result {
                 Ok(()) => {
                     info!("Wear detection set: {state:?}");
                 }
                 Err(e) => {
+                    revert(&mut app.wear_detection, state, previous);
                     error!("Failed to set wear detection: {e}");
                     app.wear_detection_status = Some(fl!("settings-inear-toggle-error", error = e));
                 }
@@ -432,6 +434,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SetNotificationVolume(level) => {
             info!("Requesting notification volume: {level:?}");
+            let previous = app.notification_volume;
             app.notification_volume = Some(level);
             app.notification_volume_status = None;
             Task::perform(
@@ -440,13 +443,14 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::NotificationVolumeResult(level, result),
+                move |result| Message::NotificationVolumeResult(level, previous, result),
             )
         }
-        Message::NotificationVolumeResult(level, result) => {
+        Message::NotificationVolumeResult(level, previous, result) => {
             match result {
                 Ok(()) => info!("Notification volume set: {level:?}"),
                 Err(e) => {
+                    revert(&mut app.notification_volume, level, previous);
                     error!("Failed to set notification volume: {e}");
                     app.notification_volume_status =
                         Some(fl!("settings-notification-volume-error", error = e));
@@ -456,6 +460,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SetScheduledPowerOff(value) => {
             info!("Requesting scheduled power-off: {value:?}");
+            let previous = app.scheduled_power_off;
             app.scheduled_power_off = Some(value);
             app.scheduled_power_off_status = None;
             Task::perform(
@@ -464,13 +469,14 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::ScheduledPowerOffResult(value, result),
+                move |result| Message::ScheduledPowerOffResult(value, previous, result),
             )
         }
-        Message::ScheduledPowerOffResult(value, result) => {
+        Message::ScheduledPowerOffResult(value, previous, result) => {
             match result {
                 Ok(()) => info!("Scheduled power-off set: {value:?}"),
                 Err(e) => {
+                    revert(&mut app.scheduled_power_off, value, previous);
                     error!("Failed to set scheduled power-off: {e}");
                     app.scheduled_power_off_status =
                         Some(fl!("settings-scheduled-poweroff-error", error = e));
@@ -505,6 +511,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             };
             let value = ScheduledPowerOff::Minutes(minutes);
             info!("Requesting scheduled power-off: {value:?}");
+            let previous = app.scheduled_power_off;
             app.scheduled_power_off = Some(value);
             app.scheduled_power_off_status = None;
             Task::perform(
@@ -513,11 +520,12 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::ScheduledPowerOffResult(value, result),
+                move |result| Message::ScheduledPowerOffResult(value, previous, result),
             )
         }
         Message::SetDisconnectPowerOff(value) => {
             info!("Requesting disconnect power-off: {value:?}");
+            let previous = app.disconnect_power_off;
             app.disconnect_power_off = Some(value);
             app.disconnect_power_off_status = None;
             Task::perform(
@@ -526,13 +534,14 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::DisconnectPowerOffResult(value, result),
+                move |result| Message::DisconnectPowerOffResult(value, previous, result),
             )
         }
-        Message::DisconnectPowerOffResult(value, result) => {
+        Message::DisconnectPowerOffResult(value, previous, result) => {
             match result {
                 Ok(()) => info!("Disconnect power-off set: {value:?}"),
                 Err(e) => {
+                    revert(&mut app.disconnect_power_off, value, previous);
                     error!("Failed to set disconnect power-off: {e}");
                     app.disconnect_power_off_status =
                         Some(fl!("settings-disconnect-poweroff-error", error = e));
@@ -542,6 +551,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SetGameMode(state) => {
             info!("Requesting game mode: {state:?}");
+            let previous = app.game_mode;
             app.game_mode = Some(state);
             app.game_mode_status = None;
             Task::perform(
@@ -550,13 +560,14 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::GameModeResult(state, result),
+                move |result| Message::GameModeResult(state, previous, result),
             )
         }
-        Message::GameModeResult(state, result) => {
+        Message::GameModeResult(state, previous, result) => {
             match result {
                 Ok(()) => info!("Game mode set: {state:?}"),
                 Err(e) => {
+                    revert(&mut app.game_mode, state, previous);
                     error!("Failed to set game mode: {e}");
                     app.game_mode_status = Some(fl!("settings-game-mode-error", error = e));
                 }
@@ -565,6 +576,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SetSleepMode(state) => {
             info!("Requesting sleep mode: {state:?}");
+            let previous = app.sleep_mode;
             app.sleep_mode = Some(state);
             app.sleep_mode_status = None;
             Task::perform(
@@ -573,13 +585,14 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::SleepModeResult(state, result),
+                move |result| Message::SleepModeResult(state, previous, result),
             )
         }
-        Message::SleepModeResult(state, result) => {
+        Message::SleepModeResult(state, previous, result) => {
             match result {
                 Ok(()) => info!("Sleep mode set: {state:?}"),
                 Err(e) => {
+                    revert(&mut app.sleep_mode, state, previous);
                     error!("Failed to set sleep mode: {e}");
                     app.sleep_mode_status = Some(fl!("settings-sleep-mode-error", error = e));
                 }
@@ -588,17 +601,19 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SetLdac(state) => {
             info!("Requesting LDAC: {state:?}");
+            let previous = app.ldac;
             app.ldac = Some(state);
             app.ldac_status = None;
             Task::perform(
                 async move { session::set_ldac(state).await.map_err(|e| e.to_string()) },
-                move |result| Message::LdacResult(state, result),
+                move |result| Message::LdacResult(state, previous, result),
             )
         }
-        Message::LdacResult(state, result) => {
+        Message::LdacResult(state, previous, result) => {
             match result {
                 Ok(()) => info!("LDAC set: {state:?}"),
                 Err(e) => {
+                    revert(&mut app.ldac, state, previous);
                     error!("Failed to set LDAC: {e}");
                     app.ldac_status = Some(fl!("settings-ldac-error", error = e));
                 }
@@ -607,6 +622,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SetMultipoint(state) => {
             info!("Requesting multipoint: {state:?}");
+            let previous = app.multipoint;
             app.multipoint = Some(state);
             app.multipoint_status = None;
             Task::perform(
@@ -615,13 +631,14 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::MultipointResult(state, result),
+                move |result| Message::MultipointResult(state, previous, result),
             )
         }
-        Message::MultipointResult(state, result) => {
+        Message::MultipointResult(state, previous, result) => {
             match result {
                 Ok(()) => info!("Multipoint set: {state:?}"),
                 Err(e) => {
+                    revert(&mut app.multipoint, state, previous);
                     error!("Failed to set multipoint: {e}");
                     app.multipoint_status = Some(fl!("settings-multipoint-error", error = e));
                 }
@@ -632,17 +649,12 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             info!("Requesting touch action: {control:?} -> {action:?}");
             // Inserted when the connect-time read failed, so the choice still
             // shows once written.
-            let map = app
-                .touch_actions
-                .get_or_insert_with(TouchActionMap::default);
-            match control {
-                TouchControl::LeftSingle => map.left_single = Some(action),
-                TouchControl::RightSingle => map.right_single = Some(action),
-                TouchControl::LeftDouble => map.left_double = Some(action),
-                TouchControl::RightDouble => map.right_double = Some(action),
-                TouchControl::LeftTriple => map.left_triple = Some(action),
-                TouchControl::RightTriple => map.right_triple = Some(action),
-            }
+            let slot = touch_action_slot(
+                app.touch_actions
+                    .get_or_insert_with(TouchActionMap::default),
+                control,
+            );
+            let previous = slot.replace(action);
             app.touch_actions_status = None;
             Task::perform(
                 async move {
@@ -650,13 +662,16 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                         .await
                         .map_err(|e| e.to_string())
                 },
-                move |result| Message::TouchActionResult(control, action, result),
+                move |result| Message::TouchActionResult(control, action, previous, result),
             )
         }
-        Message::TouchActionResult(control, action, result) => {
+        Message::TouchActionResult(control, action, previous, result) => {
             match result {
                 Ok(()) => info!("Touch action set: {control:?} -> {action:?}"),
                 Err(e) => {
+                    if let Some(map) = app.touch_actions.as_mut() {
+                        revert(touch_action_slot(map, control), action, previous);
+                    }
                     error!("Failed to set touch action: {e}");
                     app.touch_actions_status = Some(fl!("settings-touch-action-error", error = e));
                 }
@@ -975,6 +990,26 @@ fn current_custom_eq(app: &App) -> Option<[i16; qcyx_core::eq::CUSTOM_BAND_COUNT
     (app.eq_custom_active && app.eq_preset.is_none()).then_some(app.eq_custom_bands)
 }
 
+/// Undoes an optimistic UI update after its write failed, so the control
+/// shows what the device still holds. Skipped when a later request already
+/// replaced `attempted`: that newer value is the one to keep.
+fn revert<T: PartialEq>(current: &mut Option<T>, attempted: T, previous: Option<T>) {
+    if current.as_ref() == Some(&attempted) {
+        *current = previous;
+    }
+}
+
+fn touch_action_slot(map: &mut TouchActionMap, control: TouchControl) -> &mut Option<TouchAction> {
+    match control {
+        TouchControl::LeftSingle => &mut map.left_single,
+        TouchControl::RightSingle => &mut map.right_single,
+        TouchControl::LeftDouble => &mut map.left_double,
+        TouchControl::RightDouble => &mut map.right_double,
+        TouchControl::LeftTriple => &mut map.left_triple,
+        TouchControl::RightTriple => &mut map.right_triple,
+    }
+}
+
 fn set_profiles_status(app: &mut App, scope: ProfileScope, status: Option<String>) {
     match scope {
         ProfileScope::Full => app.profiles_status = status,
@@ -1033,6 +1068,79 @@ mod tests {
         assert_eq!(app.balance, 30);
         assert!(app.eq_preset.is_none());
         assert!(app.profiles_status.is_some());
+    }
+
+    #[test]
+    fn failed_write_reverts_the_optimistic_state() {
+        use qcyx_core::game_mode::GameMode;
+
+        let mut app = App {
+            game_mode: Some(GameMode::Off),
+            ..App::default()
+        };
+        let _ = handle_message(&mut app, Message::SetGameMode(GameMode::On));
+        assert_eq!(app.game_mode, Some(GameMode::On));
+
+        let _ = handle_message(
+            &mut app,
+            Message::GameModeResult(GameMode::On, Some(GameMode::Off), Err("boom".into())),
+        );
+        assert_eq!(app.game_mode, Some(GameMode::Off));
+        assert!(app.game_mode_status.is_some());
+    }
+
+    #[test]
+    fn failed_write_keeps_a_newer_request() {
+        use qcyx_core::notification_volume::NotificationVolume;
+
+        let mut app = App {
+            notification_volume: Some(NotificationVolume::High),
+            ..App::default()
+        };
+        let _ = handle_message(
+            &mut app,
+            Message::NotificationVolumeResult(
+                NotificationVolume::Low,
+                Some(NotificationVolume::Medium),
+                Err("boom".into()),
+            ),
+        );
+        assert_eq!(app.notification_volume, Some(NotificationVolume::High));
+    }
+
+    #[test]
+    fn failed_touch_action_write_restores_the_previous_action() {
+        use qcyx_core::touch_action::TouchAction;
+
+        let mut app = App {
+            touch_actions: Some(TouchActionMap {
+                left_double: Some(TouchAction::PlayPause),
+                ..TouchActionMap::default()
+            }),
+            ..App::default()
+        };
+        let _ = handle_message(
+            &mut app,
+            Message::SetTouchAction(TouchControl::LeftDouble, TouchAction::Next),
+        );
+        assert_eq!(
+            app.touch_actions.unwrap().left_double,
+            Some(TouchAction::Next)
+        );
+
+        let _ = handle_message(
+            &mut app,
+            Message::TouchActionResult(
+                TouchControl::LeftDouble,
+                TouchAction::Next,
+                Some(TouchAction::PlayPause),
+                Err("boom".into()),
+            ),
+        );
+        assert_eq!(
+            app.touch_actions.unwrap().left_double,
+            Some(TouchAction::PlayPause)
+        );
     }
 
     #[test]

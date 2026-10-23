@@ -51,8 +51,8 @@ cli-disconnect-power-off-set = Disconnect power-off timer set.
 cli-wear-detection-set = Wear detection set.
 cli-game-mode-set = Game mode set.
 cli-sleep-mode-set = Sleep mode set.
-cli-ldac-set = LDAC toggle set.
-cli-multipoint-set = Multipoint (dual-device) toggle set.
+cli-ldac-set = LDAC set.
+cli-multipoint-set = Multipoint (dual-device) set.
 cli-touch-action-set = Touch action set.
 
 waiting-title = Waiting for device...
@@ -91,7 +91,7 @@ sidebar-active-profile = Profile: {$name}
 badge-coming-soon = Coming soon
 
 # Home
-home-device-fallback-name = QCY HT08
+home-device-fallback-name = QCY earbuds
 home-firmware-label = Firmware:
 home-firmware-unknown = Unknown
 home-battery-title = Battery
@@ -153,7 +153,7 @@ eq-custom-error = Failed to set custom equalizer curve: {$error}
 settings-title = Settings
 settings-subtitle = Preferences and device information.
 settings-device-name-label = Device name
-settings-device-name-placeholder = QCY HT08
+settings-device-name-placeholder = Device name
 settings-save-button = Save
 settings-edit-button = Edit
 settings-cancel-button = Cancel
@@ -216,7 +216,7 @@ settings-reset-default-desc = Resets all settings on the device to their default
 settings-reset-default-button = Reset to default
 settings-reset-default-done = Settings reset to default.
 settings-reset-default-error = Failed to reset settings: {$error}
-settings-confirm-again = Tap again to confirm
+settings-confirm-again = Click again to confirm
 settings-danger-title = Danger zone
 settings-factory-reset-desc = Resets your earbuds to factory settings.
 settings-factory-reset-button = Factory reset

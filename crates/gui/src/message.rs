@@ -83,35 +83,52 @@ pub enum Message {
     EqCustomResult(Result<(), String>),
     /// In-ear detection toggle flipped (preserves the ANC-on-wear sub-flag).
     WearDetectionToggled(bool),
-    WearDetectionResult(WearDetection, Result<(), String>),
+    WearDetectionResult(WearDetection, Option<WearDetection>, Result<(), String>),
     /// Request to set the notification volume.
     SetNotificationVolume(NotificationVolume),
-    NotificationVolumeResult(NotificationVolume, Result<(), String>),
+    NotificationVolumeResult(
+        NotificationVolume,
+        Option<NotificationVolume>,
+        Result<(), String>,
+    ),
     /// Request to set the scheduled power-off timer.
     SetScheduledPowerOff(ScheduledPowerOff),
-    ScheduledPowerOffResult(ScheduledPowerOff, Result<(), String>),
+    ScheduledPowerOffResult(
+        ScheduledPowerOff,
+        Option<ScheduledPowerOff>,
+        Result<(), String>,
+    ),
     /// Custom scheduled-power-off minutes input field changed.
     ScheduledPowerOffCustomInputChanged(String),
     /// Submit the custom scheduled-power-off minutes value.
     ScheduledPowerOffCustomSubmit,
     /// Request to set the disconnect power-off timer.
     SetDisconnectPowerOff(DisconnectPowerOff),
-    DisconnectPowerOffResult(DisconnectPowerOff, Result<(), String>),
+    DisconnectPowerOffResult(
+        DisconnectPowerOff,
+        Option<DisconnectPowerOff>,
+        Result<(), String>,
+    ),
     /// Request to set game mode.
     SetGameMode(GameMode),
-    GameModeResult(GameMode, Result<(), String>),
+    GameModeResult(GameMode, Option<GameMode>, Result<(), String>),
     /// Request to set sleep mode.
     SetSleepMode(SleepMode),
-    SleepModeResult(SleepMode, Result<(), String>),
+    SleepModeResult(SleepMode, Option<SleepMode>, Result<(), String>),
     /// Request to set the LDAC toggle.
     SetLdac(Ldac),
-    LdacResult(Ldac, Result<(), String>),
+    LdacResult(Ldac, Option<Ldac>, Result<(), String>),
     /// Request to set the multipoint toggle.
     SetMultipoint(Multipoint),
-    MultipointResult(Multipoint, Result<(), String>),
+    MultipointResult(Multipoint, Option<Multipoint>, Result<(), String>),
     /// Request to assign a touch action to one earbud/click-count control.
     SetTouchAction(TouchControl, TouchAction),
-    TouchActionResult(TouchControl, TouchAction, Result<(), String>),
+    TouchActionResult(
+        TouchControl,
+        TouchAction,
+        Option<TouchAction>,
+        Result<(), String>,
+    ),
     /// Selected UI language (a Fluent language id, e.g. `"pt-BR"`).
     LanguageSelected(String),
 
