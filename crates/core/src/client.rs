@@ -8,6 +8,7 @@
 use crate::balance;
 use crate::battery::BatteryStatus;
 use crate::command::{self, AncScene, opcode};
+use crate::device::capabilities::DeviceCapabilities;
 use crate::device::profile::{
     BATTERY_UUID, COMMAND_UUID, NOTIFY_UUID, QCY_COMPANY_ID, SERVICE_UUID, TOUCH_ACTION_UUID,
     VERSION_UUID,
@@ -259,6 +260,7 @@ pub struct DeviceHandle {
     version_char: Option<Characteristic>,
     touch_action_char: Option<Characteristic>,
     device_name: Option<String>,
+    capabilities: DeviceCapabilities,
 }
 
 impl DeviceHandle {
@@ -291,6 +293,7 @@ impl DeviceHandle {
 
     async fn send(&self, cmd: Command) -> Result<(), CoreError> {
         cmd.validate()?;
+        self.capabilities.validate_command(&cmd)?;
 
         let payload = cmd.pack();
         let write_type = self.write_type_for(payload.len());
@@ -447,6 +450,10 @@ impl DeviceHandle {
     /// Returns the device's advertised BLE name.
     pub fn device_name(&self) -> Option<&str> {
         self.device_name.as_deref()
+    }
+
+    pub fn capabilities(&self) -> DeviceCapabilities {
+        self.capabilities
     }
 
     /// Reads the current firmware version.
@@ -724,13 +731,20 @@ pub async fn connect() -> Result<DeviceHandle, CoreError> {
 
     match setup_device(&peripheral).await {
         Ok(setup) => {
-            let device_name = guard(budget::GATT_OP, "properties", async {
+            let properties = guard(budget::GATT_OP, "properties", async {
                 Ok(peripheral.properties().await?)
             })
             .await
             .ok()
-            .flatten()
-            .and_then(|p| p.local_name);
+            .flatten();
+            let device_name = properties.as_ref().and_then(|p| p.local_name.clone());
+            let capabilities = DeviceCapabilities::from_advertisement(
+                device_name.as_deref(),
+                properties
+                    .as_ref()
+                    .and_then(|p| p.manufacturer_data.get(&QCY_COMPANY_ID).map(Vec::as_slice)),
+            );
+            tracing::debug!(?capabilities, "identified device capabilities");
 
             match &device_name {
                 Some(name) => {
@@ -753,6 +767,7 @@ pub async fn connect() -> Result<DeviceHandle, CoreError> {
                 version_char: setup.version_char,
                 touch_action_char: setup.touch_action_char,
                 device_name,
+                capabilities,
             })
         }
         Err(e) => {

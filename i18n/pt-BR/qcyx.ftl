@@ -13,6 +13,8 @@ error-connection-dropped = Conectou, mas o dispositivo derrubou o link logo em s
 error-operation-timeout = A pilha Bluetooth parou de responder e a operação foi abandonada. Reconecte e tente de novo.
 error-connection-dropped-generic = Conectou, mas o dispositivo derrubou o link logo em seguida. Verifique se os fones estão fora do estojo e ao alcance, depois tente de novo.
 error-not-connected = Não conectado ao dispositivo.
+error-transparency-unsupported = Transparência não é suportada neste modelo. Nenhum comando foi enviado.
+feature-not-supported-model = Recurso não suportado nesse modelo
 
 cli-anc-set = Cenário de ANC definido — modo: {$mode}, sub-cenário: {$sub_scene}, valor de ruído: {$noise_value}
 cli-anc-unconfirmed = Comando de ANC enviado, mas o dispositivo não confirmou — pode não ter sido aplicado.

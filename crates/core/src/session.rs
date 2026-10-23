@@ -3,6 +3,7 @@
 use crate::battery::BatteryStatus;
 use crate::client::{self, AncConfirmation, DeviceHandle};
 use crate::command::{self, AncScene};
+use crate::device::capabilities::DeviceCapabilities;
 use crate::disconnect_power_off::DisconnectPowerOff;
 use crate::eq::EqPreset;
 use crate::error::CoreError;
@@ -76,6 +77,7 @@ macro_rules! with_open_session {
 /// Static, connection-scoped info read right after a fresh connection is established.
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionInfo {
+    pub capabilities: DeviceCapabilities,
     /// The device's ANC scene at the moment of connecting.
     pub initial_anc_scene: Option<AncScene>,
     /// The device's channel balance at the moment of connecting (`0..=100`, 50 = centered).
@@ -163,6 +165,7 @@ async fn read_connection_info(handle: &DeviceHandle) -> ConnectionInfo {
     let initial_touch_actions = best_effort("touch-action map", handle.read_touch_actions().await);
 
     ConnectionInfo {
+        capabilities: handle.capabilities(),
         initial_anc_scene,
         initial_balance,
         device_name: handle.device_name().map(str::to_string),

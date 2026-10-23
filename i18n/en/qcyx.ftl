@@ -13,6 +13,8 @@ error-connection-dropped = Connected, then the device immediately dropped the li
 error-operation-timeout = The Bluetooth stack stopped responding, so the operation was abandoned. Reconnect and try again.
 error-connection-dropped-generic = Connected, then the device immediately dropped the link. Make sure the earbuds are out of the case and within range, then try again.
 error-not-connected = Not connected to the device.
+error-transparency-unsupported = Transparency is not supported on this model. No command was sent.
+feature-not-supported-model = Feature not supported on this model
 
 cli-anc-set = ANC scene set — mode: {$mode}, sub-scene: {$sub_scene}, noise value: {$noise_value}
 cli-anc-unconfirmed = ANC command sent, but the device did not confirm it — it may not have applied.

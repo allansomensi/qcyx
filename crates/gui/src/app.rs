@@ -6,6 +6,7 @@ use crate::{
 use iced::{Subscription, Task};
 use qcyx_core::battery::BatteryStatus;
 use qcyx_core::command::AncScene;
+use qcyx_core::device::capabilities::DeviceCapabilities;
 use qcyx_core::disconnect_power_off::DisconnectPowerOff;
 use qcyx_core::eq::EqPreset;
 use qcyx_core::game_mode::GameMode;
@@ -20,6 +21,7 @@ use qcyx_core::version::FirmwareVersion;
 use qcyx_core::wear_detection::WearDetection;
 
 pub struct App {
+    pub capabilities: DeviceCapabilities,
     pub state: AppState,
     pub tab: Tab,
     pub theme: iced::Theme,
@@ -120,6 +122,7 @@ pub struct App {
 impl Default for App {
     fn default() -> Self {
         Self {
+            capabilities: DeviceCapabilities::default(),
             state: AppState::Connecting,
             tab: Tab::Home,
             theme: iced::Theme::Nord,

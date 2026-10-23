@@ -41,7 +41,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let transparency_active = matches!(app.active_scene, Some(AncScene::Transparency(_)))
         || matches!(app.pending_scene, Some(AncScene::Transparency(_)));
-    if transparency_active {
+    if app.capabilities.transparency && transparency_active {
         content = content.push(transparency_section(app));
     }
 
@@ -218,7 +218,14 @@ fn pill_style(
     let ext = theme.extended_palette();
     let hovered = status == iced::widget::button::Status::Hovered;
 
-    let (background, text_color, border_color) = if is_active {
+    let (background, text_color, border_color) = if status == iced::widget::button::Status::Disabled
+    {
+        (
+            ext.background.base.color,
+            theme.palette().text.scale_alpha(0.4),
+            ext.background.strong.color.scale_alpha(0.5),
+        )
+    } else if is_active {
         (
             ext.primary.weak.color.scale_alpha(0.35),
             ext.primary.strong.color,
@@ -254,10 +261,12 @@ fn mode_button<'a>(
     label: String,
     scene: AncScene,
 ) -> Element<'a, Message> {
-    let is_active = match (app.active_scene, scene) {
-        (Some(AncScene::Transparency(_)), AncScene::Transparency(_)) => true,
-        (active, scene) => active == Some(scene),
-    };
+    let supported = app.capabilities.supports_anc_scene(scene);
+    let is_active = supported
+        && match (app.active_scene, scene) {
+            (Some(AncScene::Transparency(_)), AncScene::Transparency(_)) => true,
+            (active, scene) => active == Some(scene),
+        };
     let is_pending = app.pending_scene == Some(scene);
 
     let label_text = if is_pending {
@@ -270,8 +279,11 @@ fn mode_button<'a>(
         .spacing(8)
         .align_x(Alignment::Center);
 
-    let footer: Element<'a, Message> =
-        badge::status_slot(fl!("anc-active"), badge::Tone::Success, is_active);
+    let footer: Element<'a, Message> = if supported {
+        badge::status_slot(fl!("anc-active"), badge::Tone::Success, is_active)
+    } else {
+        text(fl!("feature-not-supported-model")).size(11).into()
+    };
 
     let mut btn = iced::widget::button(
         column![body, Space::new().height(6), footer]
@@ -283,7 +295,7 @@ fn mode_button<'a>(
     .width(Length::Fill)
     .style(move |theme: &iced::Theme, status| pill_style(theme, status, is_active));
 
-    if app.pending_scene.is_none() {
+    if supported && app.pending_scene.is_none() {
         btn = btn.on_press(Message::SetAnc(scene));
     }
 

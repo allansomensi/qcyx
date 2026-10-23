@@ -24,6 +24,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                 info.device_name, info.initial_anc_scene
             );
             app.state = AppState::Connected;
+            app.capabilities = info.capabilities;
             app.error_log = None;
             app.active_scene = None;
             if let Some(scene) = info.initial_anc_scene {
@@ -75,6 +76,7 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
         Message::Disconnected => {
             info!("Device disconnected");
             app.state = AppState::Connecting;
+            app.capabilities = Default::default();
             app.battery = None;
             app.battery_error = None;
             app.rssi = None;
@@ -132,6 +134,10 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::SetAnc(scene) => {
+            if !app.capabilities.supports_anc_scene(scene) {
+                app.status_log = Some(fl!("error-transparency-unsupported"));
+                return Task::none();
+            }
             if app.pending_scene.is_some() {
                 return Task::none();
             }
@@ -690,6 +696,17 @@ pub fn handle_message(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
 
+            if let Some(scene) = profile.anc_scene
+                && !app.capabilities.supports_anc_scene(scene)
+            {
+                let status = fl!(
+                    "profiles-apply-error",
+                    error = fl!("error-transparency-unsupported")
+                );
+                set_profiles_status(app, scope, Some(status));
+                return Task::none();
+            }
+
             // An in-flight ANC change would land after the profile's and
             // leave the UI showing the wrong scene.
             if profile.anc_scene.is_some() && app.pending_scene.is_some() {
@@ -962,5 +979,81 @@ fn set_profiles_status(app: &mut App, scope: ProfileScope, status: Option<String
     match scope {
         ProfileScope::Full => app.profiles_status = status,
         ProfileScope::Eq => app.eq_profiles_status = status,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qcyx_core::device::capabilities::DeviceCapabilities;
+
+    #[test]
+    fn refuses_transparency_messages_on_ht10_without_queueing_a_command() {
+        for mode in [
+            TransparencyMode::VocalEnhancement,
+            TransparencyMode::AmbientSound { level: 3 },
+        ] {
+            let mut app = App {
+                capabilities: DeviceCapabilities::from_advertisement(
+                    Some("QCY AilyBuds Pro-APP"),
+                    None,
+                ),
+                active_scene: Some(AncScene::Normal),
+                ..App::default()
+            };
+            let task = handle_message(&mut app, Message::SetAnc(AncScene::Transparency(mode)));
+            assert_eq!(task.units(), 0);
+            assert_eq!(app.active_scene, Some(AncScene::Normal));
+            assert!(app.pending_scene.is_none());
+            assert_eq!(
+                app.status_log.as_deref(),
+                Some(fl!("error-transparency-unsupported").as_str())
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_unsupported_profiles_before_changing_state_or_queueing_writes() {
+        let mut app = App {
+            capabilities: DeviceCapabilities::from_advertisement(
+                Some("QCY AilyBuds Pro-APP"),
+                None,
+            ),
+            active_scene: Some(AncScene::Normal),
+            balance: 30,
+            ..App::default()
+        };
+        let profile = Profile::built_in()
+            .into_iter()
+            .find(|p| matches!(p.anc_scene, Some(AncScene::Transparency(_))))
+            .unwrap();
+        let task = handle_message(&mut app, Message::ApplyProfile(ProfileScope::Full, profile));
+        assert_eq!(task.units(), 0);
+        assert_eq!(app.active_scene, Some(AncScene::Normal));
+        assert_eq!(app.balance, 30);
+        assert!(app.eq_preset.is_none());
+        assert!(app.profiles_status.is_some());
+    }
+
+    #[test]
+    fn updates_capabilities_when_switching_devices() {
+        let mut app = App::default();
+        let _ = handle_message(
+            &mut app,
+            Message::Connected(session::ConnectionInfo {
+                capabilities: DeviceCapabilities::from_advertisement(None, Some(&[0x4D, 0x48])),
+                ..Default::default()
+            }),
+        );
+        assert!(!app.capabilities.transparency);
+
+        let _ = handle_message(&mut app, Message::Disconnected);
+        let _ = handle_message(
+            &mut app,
+            Message::Connected(session::ConnectionInfo::default()),
+        );
+        let scene = AncScene::Transparency(TransparencyMode::VocalEnhancement);
+        let _ = handle_message(&mut app, Message::SetAnc(scene));
+        assert_eq!(app.pending_scene, Some(scene));
     }
 }

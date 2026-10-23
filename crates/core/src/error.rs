@@ -48,6 +48,10 @@ pub enum CoreError {
     /// control characters — see [`crate::device_actions::set_name`].
     #[error("Device name is empty after trimming and removing control characters")]
     InvalidName,
+
+    /// The connected model cannot accept any Transparency ANC scene.
+    #[error("{}", fl!("error-transparency-unsupported"))]
+    TransparencyUnsupported,
 }
 
 impl CoreError {
@@ -99,6 +103,7 @@ mod tests {
         assert!(!CoreError::FrameTooLarge(300).is_transport());
         assert!(!CoreError::InvalidPacket("short".into()).is_transport());
         assert!(!CoreError::CharacteristicNotFound("battery".into()).is_transport());
+        assert!(!CoreError::TransparencyUnsupported.is_transport());
     }
 
     #[test]
@@ -112,6 +117,7 @@ mod tests {
             CoreError::ConnectionDropped,
             CoreError::NotConnected,
             CoreError::OperationTimeout("write"),
+            CoreError::TransparencyUnsupported,
         ] {
             assert!(!error.to_string().contains("No localization"), "{error:?}");
         }

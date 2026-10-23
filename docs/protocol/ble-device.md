@@ -20,6 +20,16 @@ for each advertisement:
 
 No address or name filtering is required.
 
+### Model Identification
+
+Model identification uses the first two bytes of the QCY manufacturer payload
+as a big-endian vendor ID: `0x4D48` (AilyBuds Pro) or `0x4D4C` (HT10ANC APP).
+These identifiers are listed in the [public product catalog](https://github.com/hui1601/Quicky/blob/main/internal/product/products.json).
+When those bytes are unavailable, exact case-insensitive names are accepted:
+`QCY AilyBuds Pro`, `QCY HT10` (optionally suffixed `-APP`), and `QCY HT10ANC APP`.
+An available vendor ID takes precedence over an editable device name. AilyBuds
+Pro+ is identified separately and must not be matched as AilyBuds Pro (HT10).
+
 ---
 
 ## GATT Service
@@ -53,3 +63,22 @@ The device exposes a second GATT service (`0x7033`) that reuses the same 16-bit 
 ## Write Type
 
 Writes to the command characteristic use `WriteType::WithoutResponse` (ATT opcode `0x52`) — no ATT Write Response ever follows. Falls back to `WithResponse` if `WRITE_WITHOUT_RESPONSE` isn't advertised, though on the HT08 this never triggers.
+
+---
+
+## Capability Restrictions
+
+### AilyBuds Pro (HT10): Transparency
+
+The AilyBuds Pro does not support Transparency. Attempts to activate it have
+been reported to disconnect or power down the earbuds. For devices matched by
+[model identification](#model-identification), QCYx therefore rejects every
+Transparency `ANC_SETTING` write before sending it, including CLI commands and
+settings applied through profiles. The GUI shows the option disabled with an
+unsupported-feature message. Normal and Adaptive ANC remain available. AilyBuds
+Pro+ is a distinct variant and is not covered by this restriction.
+
+Battery, firmware `4.0.8` (both earbuds), Normal and Adaptive ANC have been
+validated on an AilyBuds Pro over macOS CoreBluetooth, including control while
+Mac audio plays through the earbuds. Other controls have not been validated on
+this model.
